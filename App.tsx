@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { 
   LayoutDashboard, 
@@ -8,9 +9,12 @@ import {
   Settings,
   LogOut,
   PenTool,
-  Ship
+  Ship,
+  Lock,
+  Mail,
+  Loader2
 } from 'lucide-react';
-import { DataProvider } from './context/DataContext'; // Import Provider
+import { DataProvider, useData } from './context/DataContext';
 import { Dashboard } from './components/Dashboard';
 import { ProductTable } from './components/ProductTable';
 import { Inventory } from './components/Inventory';
@@ -18,7 +22,6 @@ import { Finance } from './components/Finance';
 import { TestLab } from './components/TestLab';
 import { DataEntry } from './components/DataEntry';
 import { Sourcing } from './components/Sourcing';
-import { useData } from './context/DataContext';
 
 type View = 'dashboard' | 'products' | 'inventory' | 'finance' | 'testlab' | 'data_entry' | 'sourcing';
 
@@ -46,10 +49,95 @@ const SidebarItem = ({
   </button>
 );
 
+const Login: React.FC = () => {
+  const { login } = useData();
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setIsLoggingIn(true);
+    try {
+      await login(email, password);
+    } catch (err: any) {
+      setError(err.message || 'Failed to sign in. Please check your credentials.');
+    } finally {
+      setIsLoggingIn(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+      <div className="max-w-md w-full bg-white rounded-2xl shadow-xl border border-slate-100 overflow-hidden">
+        <div className="p-8 text-center bg-slate-900 text-white">
+          <div className="w-12 h-12 bg-blue-600 rounded-xl flex items-center justify-center text-white font-bold text-2xl mx-auto mb-4">E</div>
+          <h1 className="text-2xl font-bold tracking-tight">E-Com Master</h1>
+          <p className="text-slate-400 text-sm mt-1">Management Portal Login</p>
+        </div>
+        
+        <form onSubmit={handleSubmit} className="p-8 space-y-6">
+          {error && (
+            <div className="p-3 bg-red-50 text-red-600 text-xs rounded-lg border border-red-100 flex items-start gap-2">
+              <span className="font-bold">Error:</span> {error}
+            </div>
+          )}
+          
+          <div className="space-y-4">
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Email Address</label>
+              <div className="relative">
+                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                <input 
+                  type="email" 
+                  value={email} 
+                  onChange={e => setEmail(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 transition-all text-sm"
+                  placeholder="admin@ecommaster.com"
+                  required
+                />
+              </div>
+            </div>
+            
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Password</label>
+              <div className="relative">
+                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                <input 
+                  type="password" 
+                  value={password} 
+                  onChange={e => setPassword(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 transition-all text-sm"
+                  placeholder="••••••••"
+                  required
+                />
+              </div>
+            </div>
+          </div>
+          
+          <button 
+            type="submit" 
+            disabled={isLoggingIn}
+            className="w-full py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-all shadow-lg shadow-blue-200 flex items-center justify-center gap-2 disabled:opacity-70"
+          >
+            {isLoggingIn ? <Loader2 className="animate-spin" size={20} /> : 'Secure Sign In'}
+          </button>
+          
+          <p className="text-center text-xs text-slate-400">
+            Securely access your business insights.
+          </p>
+        </form>
+      </div>
+    </div>
+  );
+};
+
 const AppLayout: React.FC = () => {
   const [currentView, setCurrentView] = useState<View>('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const { products } = useData();
+  const { products, logout, user } = useData();
 
   const toggleSidebar = () => setIsSidebarOpen(!isSidebarOpen);
   const activeProducts = products.filter(p => !p.isTest);
@@ -154,7 +242,10 @@ const AppLayout: React.FC = () => {
               <Settings size={20} />
               <span>Settings</span>
             </button>
-            <button className="w-full flex items-center gap-3 px-4 py-3 text-red-500 hover:text-red-700 transition-colors text-sm font-medium">
+            <button 
+              onClick={logout}
+              className="w-full flex items-center gap-3 px-4 py-3 text-red-500 hover:text-red-700 transition-colors text-sm font-medium"
+            >
               <LogOut size={20} />
               <span>Sign Out</span>
             </button>
@@ -174,10 +265,10 @@ const AppLayout: React.FC = () => {
           <div className="flex items-center justify-end w-full gap-4">
             <div className="hidden sm:block text-right">
               <p className="text-sm font-medium text-slate-900">Admin User</p>
-              <p className="text-xs text-slate-500">admin@ecommaster.com</p>
+              <p className="text-xs text-slate-500">{user?.email || 'admin@ecommaster.com'}</p>
             </div>
-            <div className="w-10 h-10 bg-slate-200 rounded-full flex items-center justify-center text-slate-500">
-              U
+            <div className="w-10 h-10 bg-slate-200 rounded-full flex items-center justify-center text-slate-500 uppercase">
+              {user?.email?.[0] || 'U'}
             </div>
           </div>
         </header>
@@ -192,10 +283,31 @@ const AppLayout: React.FC = () => {
   );
 };
 
+const AuthGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { isAuthenticated, isLoading } = useData();
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50">
+        <Loader2 className="animate-spin text-blue-600 mb-4" size={48} />
+        <p className="text-slate-500 font-medium">Synchronizing your dashboard...</p>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return <Login />;
+  }
+
+  return <>{children}</>;
+};
+
 const App: React.FC = () => {
   return (
     <DataProvider>
-      <AppLayout />
+      <AuthGate>
+        <AppLayout />
+      </AuthGate>
     </DataProvider>
   );
 };

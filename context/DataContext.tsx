@@ -1,6 +1,35 @@
-import React, { createContext, useContext, useState, ReactNode } from 'react';
+
+import React, { createContext, useContext, useState, ReactNode, useEffect } from 'react';
+import { initializeApp } from 'firebase/app';
+import { 
+  getFirestore, 
+  collection, 
+  onSnapshot, 
+  addDoc, 
+  deleteDoc, 
+  doc, 
+  updateDoc,
+  query,
+  orderBy,
+  FirestoreError
+} from 'firebase/firestore';
+import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut, User } from 'firebase/auth';
 import { Product, Expense, MonthlyStat, Shipment, Invoice, HistoryLog } from '../types';
-import { PRODUCTS_DATA, TEST_PRODUCTS, EXPENSES, MONTHLY_STATS, MOCK_HISTORY } from '../constants';
+
+// Firebase Configuration
+const firebaseConfig = {
+  apiKey: "AIzaSyDnclwGNEea9CTIdFN31fbuvz7eJSGcbrI",
+  authDomain: "ecom-empire-ae98b.firebaseapp.com",
+  projectId: "ecom-empire-ae98b",
+  storageBucket: "ecom-empire-ae98b.firebasestorage.app",
+  messagingSenderId: "564752058610",
+  appId: "1:564752058610:web:51989cc355d80be047a86b",
+  measurementId: "G-2JZWEH13JH"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+const auth = getAuth(app);
 
 interface DataContextType {
   products: Product[];
@@ -8,109 +37,143 @@ interface DataContextType {
   monthlyStats: MonthlyStat[];
   shipments: Shipment[];
   invoices: Invoice[];
-  history: HistoryLog[]; // New History Log
-  addProduct: (product: Product) => void;
-  deleteProduct: (id: string) => void;
-  updateProductMetrics: (id: string, metrics: any) => void;
-  editProductDetails: (id: string, details: any) => void;
-  addExpense: (expense: Expense) => void;
-  addShipment: (shipment: Shipment) => void;
-  addInvoice: (invoice: Invoice) => void;
-  toggleInvoiceStatus: (id: string) => void;
+  history: HistoryLog[];
+  addProduct: (product: Product) => Promise<void>;
+  deleteProduct: (id: string) => Promise<void>;
+  updateProductMetrics: (id: string, metrics: any) => Promise<void>;
+  editProductDetails: (id: string, details: any) => Promise<void>;
+  addExpense: (expense: Expense) => Promise<void>;
+  addShipment: (shipment: Shipment) => Promise<void>;
+  addInvoice: (invoice: Invoice) => Promise<void>;
+  toggleInvoiceStatus: (id: string) => Promise<void>;
+  login: (email: string, pass: string) => Promise<void>;
+  logout: () => Promise<void>;
+  isAuthenticated: boolean;
+  isLoading: boolean;
+  user: User | null;
 }
 
 const DataContext = createContext<DataContextType | undefined>(undefined);
 
 export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [products, setProducts] = useState<Product[]>([...PRODUCTS_DATA, ...TEST_PRODUCTS]);
-  const [expenses, setExpenses] = useState<Expense[]>(EXPENSES);
-  const [monthlyStats, setMonthlyStats] = useState<MonthlyStat[]>(MONTHLY_STATS);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [monthlyStats, setMonthlyStats] = useState<MonthlyStat[]>([]);
   const [shipments, setShipments] = useState<Shipment[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
-  const [history, setHistory] = useState<HistoryLog[]>(MOCK_HISTORY);
+  const [history, setHistory] = useState<HistoryLog[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [user, setUser] = useState<User | null>(null);
 
-  const addProduct = (newProduct: Product) => {
-    setProducts(prev => [...prev, newProduct]);
+  // Firestore Error Handler
+  const handleFirestoreError = (error: FirestoreError, context: string) => {
+    if (error.code === 'permission-denied') {
+      console.warn(`Firestore: Permission denied for ${context}. Ensure you are logged in.`);
+    } else {
+      console.error(`Firestore Error [${context}]:`, error);
+    }
   };
 
-  const deleteProduct = (id: string) => {
-    setProducts(prev => prev.filter(p => p.id !== id));
-  };
+  // Auth Listener
+  useEffect(() => {
+    const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
+      if (currentUser) {
+        setUser(currentUser);
+        setIsAuthenticated(true);
+      } else {
+        setUser(null);
+        setIsAuthenticated(false);
+        setIsLoading(false); // Stop loading to show login screen
+      }
+    });
+    return () => unsubscribeAuth();
+  }, []);
 
-  const addExpense = (newExpense: Expense) => {
-    setExpenses(prev => [newExpense, ...prev]);
-    
-    // Add to History
-    const newLog: HistoryLog = {
-      id: Date.now().toString(),
-      date: newExpense.date,
-      type: 'EXPENSE',
-      expenseCategory: newExpense.category,
-      expenseAmount: newExpense.amount,
-      netProfit: -newExpense.amount // Expenses reduce profit
+  // Data Listeners (Gated by Auth)
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    setIsLoading(true);
+    console.log('User verified. Initializing data listeners...');
+
+    const unsubProducts = onSnapshot(collection(db, 'products'), (snapshot) => {
+      setProducts(snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as Product)));
+    }, (error) => handleFirestoreError(error, 'products'));
+
+    const unsubExpenses = onSnapshot(query(collection(db, 'expenses'), orderBy('date', 'desc')), (snapshot) => {
+      setExpenses(snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as Expense)));
+    }, (error) => handleFirestoreError(error, 'expenses'));
+
+    const unsubShipments = onSnapshot(collection(db, 'shipments'), (snapshot) => {
+      setShipments(snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as Shipment)));
+    }, (error) => handleFirestoreError(error, 'shipments'));
+
+    const unsubInvoices = onSnapshot(collection(db, 'invoices'), (snapshot) => {
+      setInvoices(snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as Invoice)));
+    }, (error) => handleFirestoreError(error, 'invoices'));
+
+    const unsubHistory = onSnapshot(query(collection(db, 'history'), orderBy('date', 'desc')), (snapshot) => {
+      setHistory(snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as HistoryLog)));
+      setIsLoading(false);
+    }, (error) => handleFirestoreError(error, 'history'));
+
+    return () => {
+      unsubProducts();
+      unsubExpenses();
+      unsubShipments();
+      unsubInvoices();
+      unsubHistory();
     };
-    setHistory(prev => [...prev, newLog]);
+  }, [isAuthenticated]);
+
+  const login = async (email: string, pass: string) => {
+    await signInWithEmailAndPassword(auth, email, pass);
   };
 
-  const addShipment = (shipment: Shipment) => {
-    setShipments(prev => [shipment, ...prev]);
+  const logout = async () => {
+    await signOut(auth);
+    setProducts([]);
+    setExpenses([]);
+    setShipments([]);
+    setInvoices([]);
+    setHistory([]);
   };
 
-  const addInvoice = (invoice: Invoice) => {
-    setInvoices(prev => [invoice, ...prev]);
-  };
-
-  const toggleInvoiceStatus = (id: string) => {
-    setInvoices(prev => prev.map(inv => 
-      inv.id === id ? { ...inv, status: inv.status === 'Paid' ? 'Unpaid' : 'Paid' } : inv
-    ));
-  };
-
-  // Helper to recalculate financials based on current state + changes
   const calculateProductFinancials = (p: Product) => {
-    // 1. Costs
-    // Service Fees = Total Orders * Fee Per Unit (Per User Request)
-    const calculatedServiceFees = Math.abs(p.totalOrders * p.serviceFeePerUnit);
-    
-    // Total Ad Spend
-    const totalAdSpend = Math.abs(p.adsFacebook) + Math.abs(p.adsTikTok);
+    const totalOrders = p.totalOrders || 0;
+    const serviceFeePerUnit = p.serviceFeePerUnit || 0;
+    const adsFacebook = p.adsFacebook || 0;
+    const adsTikTok = p.adsTikTok || 0;
+    const cogs = p.cogs || 0;
+    const extraFees = p.extraFees || 0;
+    const shippingFees = p.shippingFees || 0;
+    const totalRevenue = p.totalRevenue || 0;
+    const totalLeads = p.totalLeads || 0;
+    const totalDelivered = p.totalDelivered || 0;
 
-    // Other Costs (Absolute values)
-    const absCogs = Math.abs(p.cogs);
-    const absExtra = Math.abs(p.extraFees);
-    const absShipping = Math.abs(p.shippingFees);
-
+    const calculatedServiceFees = Math.abs(totalOrders * serviceFeePerUnit);
+    const totalAdSpend = Math.abs(adsFacebook) + Math.abs(adsTikTok);
+    const absCogs = Math.abs(cogs);
+    const absExtra = Math.abs(extraFees);
+    const absShipping = Math.abs(shippingFees);
     const totalCosts = totalAdSpend + calculatedServiceFees + absCogs + absExtra + absShipping;
+    const netProfit = totalRevenue - totalCosts;
 
-    // 2. Net Profit
-    // Revenue - All Charges
-    const netProfit = p.totalRevenue - totalCosts;
-
-    // 3. Metrics
-    // CPD (Cost Per Delivered/Order) - User requested CPD be based on Orders
-    const cpd = p.totalOrders > 0 ? parseFloat((totalAdSpend / p.totalOrders).toFixed(2)) : 0;
-    
-    // CPL (Cost Per Lead)
-    const cpl = p.totalLeads > 0 ? parseFloat((totalAdSpend / p.totalLeads).toFixed(2)) : 0;
-    
-    // Profit Per Order = Net Profit / Total Confirmed Orders
-    const profitPerOrder = p.totalOrders > 0 ? parseFloat((netProfit / p.totalOrders).toFixed(2)) : 0;
-
-    // Financial Health
+    const cpd = totalOrders > 0 ? parseFloat((totalAdSpend / totalOrders).toFixed(2)) : 0;
+    const cpl = totalLeads > 0 ? parseFloat((totalAdSpend / totalLeads).toFixed(2)) : 0;
+    const profitPerOrder = totalOrders > 0 ? parseFloat((netProfit / totalOrders).toFixed(2)) : 0;
     const nonAdCosts = calculatedServiceFees + absCogs + absExtra + absShipping;
-    const grossMargin = p.totalRevenue - nonAdCosts; // Revenue remaining to cover Ads + Profit
+    const grossMargin = totalRevenue - nonAdCosts;
 
-    // CPD Breakeven (Max Ad Spend per Order to break even)
-    const cpdBreakeven = p.totalOrders > 0 ? parseFloat((grossMargin / p.totalOrders).toFixed(2)) : 0;
-
-    // CPL Breakeven (Max Ad Spend per Lead to break even)
-    const cplBreakeven = p.totalLeads > 0 ? parseFloat((grossMargin / p.totalLeads).toFixed(2)) : 0;
-
-    const deliveryRate = p.totalLeads > 0 ? parseFloat(((p.totalDelivered / p.totalLeads) * 100).toFixed(1)) : 0;
-    const confirmationRate = p.totalLeads > 0 ? parseFloat(((p.totalOrders / p.totalLeads) * 100).toFixed(1)) : 0;
+    const cpdBreakeven = totalOrders > 0 ? parseFloat((grossMargin / totalOrders).toFixed(2)) : 0;
+    const cplBreakeven = totalLeads > 0 ? parseFloat((grossMargin / totalLeads).toFixed(2)) : 0;
+    const deliveryRate = totalLeads > 0 ? parseFloat(((totalDelivered / totalLeads) * 100).toFixed(1)) : 0;
+    const confirmationRate = totalLeads > 0 ? parseFloat(((totalOrders / totalLeads) * 100).toFixed(1)) : 0;
+    const profitMargin = totalRevenue > 0 ? parseFloat(((netProfit / totalRevenue) * 100).toFixed(1)) : 0;
 
     return {
-      serviceFees: -calculatedServiceFees, // Store as negative for consistency with CSV view
+      serviceFees: -calculatedServiceFees,
       totalAdSpend,
       netProfit,
       cpd,
@@ -119,103 +182,67 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       cpdBreakeven,
       cplBreakeven,
       deliveryRate,
-      confirmationRate
+      confirmationRate,
+      profitMargin
     };
   };
 
-  const editProductDetails = (id: string, details: any) => {
-    setProducts(prev => prev.map(p => {
-      if (p.id !== id) return p;
-      
-      const updatedProduct: Product = {
-        ...p,
-        name: details.name ?? p.name,
-        sellingPrice: Number(details.sellingPrice ?? p.sellingPrice),
-        serviceFeePerUnit: Number(details.serviceFeePerUnit ?? p.serviceFeePerUnit),
-        stockAvailable: Number(details.stockAvailable ?? p.stockAvailable),
-        totalLeads: Number(details.totalLeads ?? p.totalLeads),
-        totalOrders: Number(details.totalOrders ?? p.totalOrders),
-        totalDelivered: Number(details.totalDelivered ?? p.totalDelivered),
-        totalRevenue: Number(details.totalRevenue ?? p.totalRevenue),
-        adsFacebook: Number(details.adsFacebook ?? p.adsFacebook),
-        adsTikTok: Number(details.adsTikTok ?? p.adsTikTok),
-        cogs: Number(details.cogs ?? p.cogs),
-        extraFees: Number(details.extraFees ?? p.extraFees),
-        shippingFees: Number(details.shippingFees ?? p.shippingFees),
-      };
-
-      const financials = calculateProductFinancials(updatedProduct);
-
-      return {
-        ...updatedProduct,
-        ...financials
-      };
-    }));
+  // PERSISTENCE ACTIONS
+  const addProduct = async (newProduct: Product) => {
+    if (!isAuthenticated) return;
+    try {
+      await addDoc(collection(db, 'products'), newProduct);
+    } catch (e) {
+      console.error('Add Product Failed:', e);
+    }
   };
 
-  const updateProductMetrics = (id: string, metrics: {
-    fbAds: number;
-    tiktokAds: number;
-    newLeads: number; 
-    confirmedOrders: number;
-    deliveredUnits: number;
-    stockAdded: number;
-    stockCost: number;
-    extraFees: number;
-    shippingFees: number;
-    revenue: number;
-  }) => {
-    setProducts(prev => prev.map(p => {
-      if (p.id !== id) return p;
+  const deleteProduct = async (id: string) => {
+    if (!isAuthenticated) return;
+    try {
+      await deleteDoc(doc(db, 'products', id));
+    } catch (e) {
+      console.error('Delete Product Failed:', e);
+    }
+  };
 
-      // Update Counts
-      const updatedTotalLeads = (p.totalLeads || 0) + metrics.newLeads;
-      const updatedTotalOrders = (p.totalOrders || 0) + metrics.confirmedOrders;
-      const updatedTotalDelivered = p.totalDelivered + metrics.deliveredUnits;
-      
-      // Update Financials (Additive)
-      const updatedTotalRevenue = p.totalRevenue + metrics.revenue;
-      const updatedAdsFB = p.adsFacebook - metrics.fbAds;
-      const updatedAdsTikTok = p.adsTikTok - metrics.tiktokAds;
-      const updatedCogs = p.cogs - metrics.stockCost;
-      const updatedExtraFees = (p.extraFees || 0) - metrics.extraFees;
-      const updatedShippingFees = (p.shippingFees || 0) - metrics.shippingFees;
-      
-      // Stock
-      const realStockAvailable = p.stockAvailable + metrics.stockAdded - metrics.deliveredUnits;
-      const updatedStockTotal = p.stockTotal + metrics.stockAdded;
+  const editProductDetails = async (id: string, details: any) => {
+    if (!isAuthenticated) return;
+    try {
+      const p = products.find(prod => prod.id === id);
+      if (!p) return;
+      const financials = calculateProductFinancials({ ...p, ...details } as Product);
+      await updateDoc(doc(db, 'products', id), { ...details, ...financials });
+    } catch (e) {
+      console.error('Edit Product Failed:', e);
+    }
+  };
 
-      const intermediateProduct: Product = {
-        ...p,
-        totalLeads: updatedTotalLeads,
-        totalOrders: updatedTotalOrders,
-        totalDelivered: updatedTotalDelivered,
-        totalRevenue: updatedTotalRevenue,
-        adsFacebook: updatedAdsFB,
-        adsTikTok: updatedAdsTikTok,
-        cogs: updatedCogs,
-        extraFees: updatedExtraFees,
-        shippingFees: updatedShippingFees,
-        stockAvailable: realStockAvailable,
-        stockTotal: updatedStockTotal,
-        // Placeholders
-        netProfit: 0, cpd: 0, cpl: 0, profitPerOrder: 0, 
-        cpdBreakeven: 0, cplBreakeven: 0, serviceFees: 0, totalAdSpend: 0,
-        deliveryRate: 0, confirmationRate: 0, breakEvenDeliveryRate: 0, profitMargin: 0
+  const updateProductMetrics = async (id: string, metrics: any) => {
+    if (!isAuthenticated) return;
+    try {
+      const p = products.find(prod => prod.id === id);
+      if (!p) return;
+
+      const updatedData = {
+        totalLeads: (p.totalLeads || 0) + metrics.newLeads,
+        totalOrders: (p.totalOrders || 0) + metrics.confirmedOrders,
+        totalDelivered: (p.totalDelivered || 0) + metrics.deliveredUnits,
+        totalRevenue: (p.totalRevenue || 0) + metrics.revenue,
+        adsFacebook: (p.adsFacebook || 0) - metrics.fbAds,
+        adsTikTok: (p.adsTikTok || 0) - metrics.tiktokAds,
+        cogs: (p.cogs || 0) - metrics.stockCost,
+        extraFees: (p.extraFees || 0) - metrics.extraFees,
+        shippingFees: (p.shippingFees || 0) - metrics.shippingFees,
+        stockAvailable: (p.stockAvailable || 0) + metrics.stockAdded - metrics.deliveredUnits,
+        stockTotal: (p.stockTotal || 0) + metrics.stockAdded
       };
 
-      const financials = calculateProductFinancials(intermediateProduct);
-
-      // --- LOG HISTORY START ---
-      // Calculate costs for this specific batch update to log net profit correctly for the day
-      // Service fee logic: based on *orders* for this batch
-      const batchServiceFees = metrics.confirmedOrders * p.serviceFeePerUnit;
+      const financials = calculateProductFinancials({ ...p, ...updatedData } as Product);
       const batchAdSpend = metrics.fbAds + metrics.tiktokAds;
-      const batchCosts = batchAdSpend + batchServiceFees + metrics.stockCost + metrics.extraFees + metrics.shippingFees;
-      const batchNetProfit = metrics.revenue - batchCosts;
+      const batchCosts = batchAdSpend + (metrics.confirmedOrders * (p.serviceFeePerUnit || 0)) + metrics.stockCost + metrics.extraFees + metrics.shippingFees;
 
-      const log: HistoryLog = {
-        id: Date.now().toString(),
+      await addDoc(collection(db, 'history'), {
         date: new Date().toISOString().split('T')[0],
         type: 'METRIC_UPDATE',
         productId: id,
@@ -227,43 +254,71 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         cogs: metrics.stockCost,
         extraFees: metrics.extraFees,
         shippingFees: metrics.shippingFees,
-        serviceFees: batchServiceFees,
-        netProfit: batchNetProfit
-      };
-      // Must use a functional update for history to access the latest state if needed, 
-      // but here we just append.
-      setHistory(prev => [...prev, log]);
-      // --- LOG HISTORY END ---
+        netProfit: metrics.revenue - batchCosts
+      });
 
-      // Status
-      let newStatus: Product['status'] = 'Active';
-      if (realStockAvailable <= 0) newStatus = 'Out of Stock';
-      else if (realStockAvailable < 20) newStatus = 'Low Stock';
+      let status: Product['status'] = 'Active';
+      if (updatedData.stockAvailable <= 0) status = 'Out of Stock';
+      else if (updatedData.stockAvailable < 20) status = 'Low Stock';
 
-      return {
-        ...intermediateProduct,
-        ...financials,
-        status: newStatus
-      };
-    }));
+      await updateDoc(doc(db, 'products', id), { ...updatedData, ...financials, status });
+    } catch (e) {
+      console.error('Update Metrics Failed:', e);
+    }
+  };
+
+  const addExpense = async (newExpense: Expense) => {
+    if (!isAuthenticated) return;
+    try {
+      await addDoc(collection(db, 'expenses'), newExpense);
+      await addDoc(collection(db, 'history'), {
+        date: newExpense.date,
+        type: 'EXPENSE',
+        expenseCategory: newExpense.category,
+        expenseAmount: newExpense.amount,
+        netProfit: -newExpense.amount
+      });
+    } catch (e) {
+      console.error('Add Expense Failed:', e);
+    }
+  };
+
+  const addShipment = async (shipment: Shipment) => {
+    if (!isAuthenticated) return;
+    try {
+      await addDoc(collection(db, 'shipments'), shipment);
+    } catch (e) {
+      console.error('Add Shipment Failed:', e);
+    }
+  };
+
+  const addInvoice = async (invoice: Invoice) => {
+    if (!isAuthenticated) return;
+    try {
+      await addDoc(collection(db, 'invoices'), invoice);
+    } catch (e) {
+      console.error('Add Invoice Failed:', e);
+    }
+  };
+
+  const toggleInvoiceStatus = async (id: string) => {
+    if (!isAuthenticated) return;
+    try {
+      const inv = invoices.find(i => i.id === id);
+      if (inv) {
+        await updateDoc(doc(db, 'invoices', id), { status: inv.status === 'Paid' ? 'Unpaid' : 'Paid' });
+      }
+    } catch (e) {
+      console.error('Toggle Invoice Failed:', e);
+    }
   };
 
   return (
     <DataContext.Provider value={{ 
-      products, 
-      expenses, 
-      monthlyStats,
-      shipments,
-      invoices,
-      history,
-      addProduct,
-      deleteProduct,
-      updateProductMetrics,
-      editProductDetails,
-      addExpense,
-      addShipment,
-      addInvoice,
-      toggleInvoiceStatus
+      products, expenses, monthlyStats, shipments, invoices, history,
+      addProduct, deleteProduct, updateProductMetrics, editProductDetails,
+      addExpense, addShipment, addInvoice, toggleInvoiceStatus, 
+      login, logout, isAuthenticated, isLoading, user
     }}>
       {children}
     </DataContext.Provider>
@@ -272,8 +327,6 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
 export const useData = () => {
   const context = useContext(DataContext);
-  if (context === undefined) {
-    throw new Error('useData must be used within a DataProvider');
-  }
+  if (context === undefined) throw new Error('useData must be used within a DataProvider');
   return context;
 };
