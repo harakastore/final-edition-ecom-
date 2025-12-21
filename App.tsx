@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   LayoutDashboard, 
   Package, 
@@ -12,7 +12,8 @@ import {
   Ship,
   Lock,
   Mail,
-  Loader2
+  Loader2,
+  RefreshCcw
 } from 'lucide-react';
 import { DataProvider, useData } from './context/DataContext';
 import { Dashboard } from './components/Dashboard';
@@ -137,10 +138,41 @@ const Login: React.FC = () => {
 const AppLayout: React.FC = () => {
   const [currentView, setCurrentView] = useState<View>('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const { products, logout, user } = useData();
+  const [isResetting, setIsResetting] = useState(false);
+  const { products, logout, user, clearAllData, isAuthenticated } = useData();
+
+  // One-time auto-purge logic per user request
+  useEffect(() => {
+    const performInitialPurge = async () => {
+      const resetFlag = localStorage.getItem('ecom_master_v3_reset_done');
+      if (!resetFlag && isAuthenticated) {
+        setIsResetting(true);
+        try {
+          console.log("Triggering auto-purge to provide new platform...");
+          await clearAllData();
+          localStorage.setItem('ecom_master_v3_reset_done', 'true');
+        } catch (err) {
+          console.error("Auto-purge failed:", err);
+        } finally {
+          setIsResetting(false);
+        }
+      }
+    };
+    performInitialPurge();
+  }, [isAuthenticated, clearAllData]);
 
   const toggleSidebar = () => setIsSidebarOpen(!isSidebarOpen);
   const activeProducts = products.filter(p => !p.isTest);
+
+  if (isResetting) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-slate-900 text-white">
+        <RefreshCcw className="animate-spin text-blue-400 mb-6" size={64} />
+        <h1 className="text-2xl font-bold">Wiping Database...</h1>
+        <p className="text-slate-400 mt-2">Clearing all historical data to provide a fresh platform.</p>
+      </div>
+    );
+  }
 
   const renderContent = () => {
     switch (currentView) {

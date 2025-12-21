@@ -11,12 +11,13 @@ import {
   updateDoc,
   query,
   orderBy,
+  getDocs,
+  writeBatch,
   FirestoreError
 } from 'firebase/firestore';
 import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut, User } from 'firebase/auth';
 import { Product, Expense, MonthlyStat, Shipment, Invoice, HistoryLog } from '../types';
 
-// Firebase Configuration
 const firebaseConfig = {
   apiKey: "AIzaSyDnclwGNEea9CTIdFN31fbuvz7eJSGcbrI",
   authDomain: "ecom-empire-ae98b.firebaseapp.com",
@@ -46,6 +47,7 @@ interface DataContextType {
   addShipment: (shipment: Shipment) => Promise<void>;
   addInvoice: (invoice: Invoice) => Promise<void>;
   toggleInvoiceStatus: (id: string) => Promise<void>;
+  clearAllData: () => Promise<void>;
   login: (email: string, pass: string) => Promise<void>;
   logout: () => Promise<void>;
   isAuthenticated: boolean;
@@ -66,64 +68,46 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [user, setUser] = useState<User | null>(null);
 
-  // Firestore Error Handler
-  const handleFirestoreError = (error: FirestoreError, context: string) => {
-    if (error.code === 'permission-denied') {
-      console.warn(`Firestore: Permission denied for ${context}. Ensure you are logged in.`);
-    } else {
-      console.error(`Firestore Error [${context}]:`, error);
-    }
-  };
-
-  // Auth Listener
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
       if (currentUser) {
         setUser(currentUser);
         setIsAuthenticated(true);
+        setIsLoading(false);
       } else {
         setUser(null);
         setIsAuthenticated(false);
-        setIsLoading(false); // Stop loading to show login screen
+        setIsLoading(false);
       }
     });
     return () => unsubscribeAuth();
   }, []);
 
-  // Data Listeners (Gated by Auth)
   useEffect(() => {
     if (!isAuthenticated) return;
 
-    setIsLoading(true);
-    console.log('User verified. Initializing data listeners...');
-
     const unsubProducts = onSnapshot(collection(db, 'products'), (snapshot) => {
       setProducts(snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as Product)));
-    }, (error) => handleFirestoreError(error, 'products'));
+    });
 
     const unsubExpenses = onSnapshot(query(collection(db, 'expenses'), orderBy('date', 'desc')), (snapshot) => {
       setExpenses(snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as Expense)));
-    }, (error) => handleFirestoreError(error, 'expenses'));
+    });
 
     const unsubShipments = onSnapshot(collection(db, 'shipments'), (snapshot) => {
       setShipments(snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as Shipment)));
-    }, (error) => handleFirestoreError(error, 'shipments'));
+    });
 
     const unsubInvoices = onSnapshot(collection(db, 'invoices'), (snapshot) => {
       setInvoices(snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as Invoice)));
-    }, (error) => handleFirestoreError(error, 'invoices'));
+    });
 
     const unsubHistory = onSnapshot(query(collection(db, 'history'), orderBy('date', 'desc')), (snapshot) => {
       setHistory(snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as HistoryLog)));
-      setIsLoading(false);
-    }, (error) => handleFirestoreError(error, 'history'));
+    });
 
     return () => {
-      unsubProducts();
-      unsubExpenses();
-      unsubShipments();
-      unsubInvoices();
-      unsubHistory();
+      unsubProducts(); unsubExpenses(); unsubShipments(); unsubInvoices(); unsubHistory();
     };
   }, [isAuthenticated]);
 
@@ -133,11 +117,38 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const logout = async () => {
     await signOut(auth);
-    setProducts([]);
-    setExpenses([]);
-    setShipments([]);
-    setInvoices([]);
-    setHistory([]);
+    setProducts([]); setExpenses([]); setShipments([]); setInvoices([]); setHistory([]);
+  };
+
+  const clearAllData = async () => {
+    if (!isAuthenticated) {
+      console.warn("User not authenticated, cannot clear data.");
+      return;
+    }
+    
+    // 1. Immediately clear local state to show 0 in UI
+    setProducts([]); setHistory([]); setExpenses([]); setShipments([]); setInvoices([]);
+    
+    const collections = ['products', 'expenses', 'shipments', 'invoices', 'history'];
+    try {
+      for (const collName of collections) {
+        const querySnapshot = await getDocs(collection(db, collName));
+        if (querySnapshot.empty) continue;
+        
+        const docsToDelete = querySnapshot.docs;
+        // Process in smaller batches for maximum reliability
+        for (let i = 0; i < docsToDelete.length; i += 100) {
+          const batch = writeBatch(db);
+          const chunk = docsToDelete.slice(i, i + 100);
+          chunk.forEach((d) => batch.delete(doc(db, collName, d.id)));
+          await batch.commit();
+        }
+      }
+      console.log("Database successfully purged.");
+    } catch (e) {
+      console.error("Master Purge Failed:", e);
+      throw e;
+    }
   };
 
   const calculateProductFinancials = (p: Product) => {
@@ -154,68 +165,70 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     const calculatedServiceFees = Math.abs(totalOrders * serviceFeePerUnit);
     const totalAdSpend = Math.abs(adsFacebook) + Math.abs(adsTikTok);
-    const absCogs = Math.abs(cogs);
-    const absExtra = Math.abs(extraFees);
-    const absShipping = Math.abs(shippingFees);
-    const totalCosts = totalAdSpend + calculatedServiceFees + absCogs + absExtra + absShipping;
+    const totalCosts = totalAdSpend + calculatedServiceFees + Math.abs(cogs) + Math.abs(extraFees) + Math.abs(shippingFees);
     const netProfit = totalRevenue - totalCosts;
-
-    const cpd = totalOrders > 0 ? parseFloat((totalAdSpend / totalOrders).toFixed(2)) : 0;
-    const cpl = totalLeads > 0 ? parseFloat((totalAdSpend / totalLeads).toFixed(2)) : 0;
-    const profitPerOrder = totalOrders > 0 ? parseFloat((netProfit / totalOrders).toFixed(2)) : 0;
-    const nonAdCosts = calculatedServiceFees + absCogs + absExtra + absShipping;
-    const grossMargin = totalRevenue - nonAdCosts;
-
-    const cpdBreakeven = totalOrders > 0 ? parseFloat((grossMargin / totalOrders).toFixed(2)) : 0;
-    const cplBreakeven = totalLeads > 0 ? parseFloat((grossMargin / totalLeads).toFixed(2)) : 0;
-    const deliveryRate = totalLeads > 0 ? parseFloat(((totalDelivered / totalLeads) * 100).toFixed(1)) : 0;
-    const confirmationRate = totalLeads > 0 ? parseFloat(((totalOrders / totalLeads) * 100).toFixed(1)) : 0;
-    const profitMargin = totalRevenue > 0 ? parseFloat(((netProfit / totalRevenue) * 100).toFixed(1)) : 0;
 
     return {
       serviceFees: -calculatedServiceFees,
       totalAdSpend,
       netProfit,
-      cpd,
-      cpl,
-      profitPerOrder,
-      cpdBreakeven,
-      cplBreakeven,
-      deliveryRate,
-      confirmationRate,
-      profitMargin
+      cpd: totalOrders > 0 ? parseFloat((totalAdSpend / totalOrders).toFixed(2)) : 0,
+      cpl: totalLeads > 0 ? parseFloat((totalAdSpend / totalLeads).toFixed(2)) : 0,
+      profitPerOrder: totalOrders > 0 ? parseFloat((netProfit / totalOrders).toFixed(2)) : 0,
+      deliveryRate: totalLeads > 0 ? parseFloat(((totalDelivered / totalLeads) * 100).toFixed(1)) : 0,
+      confirmationRate: totalLeads > 0 ? parseFloat(((totalOrders / totalLeads) * 100).toFixed(1)) : 0,
+      profitMargin: totalRevenue > 0 ? parseFloat(((netProfit / totalRevenue) * 100).toFixed(1)) : 0,
+      cpdBreakeven: 0,
+      cplBreakeven: 0
     };
   };
 
-  // PERSISTENCE ACTIONS
   const addProduct = async (newProduct: Product) => {
     if (!isAuthenticated) return;
     try {
-      await addDoc(collection(db, 'products'), newProduct);
-    } catch (e) {
-      console.error('Add Product Failed:', e);
-    }
+      const docRef = await addDoc(collection(db, 'products'), newProduct);
+      if (newProduct.cogs) {
+        await addDoc(collection(db, 'history'), {
+          date: new Date().toISOString().split('T')[0],
+          type: 'METRIC_UPDATE',
+          productId: docRef.id,
+          cogs: newProduct.cogs,
+          netProfit: -newProduct.cogs
+        });
+      }
+    } catch (e) { console.error('Add Product Failed:', e); }
   };
 
   const deleteProduct = async (id: string) => {
     if (!isAuthenticated) return;
-    try {
-      await deleteDoc(doc(db, 'products', id));
-    } catch (e) {
-      console.error('Delete Product Failed:', e);
-    }
+    try { await deleteDoc(doc(db, 'products', id)); } catch (e) { console.error('Delete Product Failed:', e); }
   };
 
   const editProductDetails = async (id: string, details: any) => {
     if (!isAuthenticated) return;
     try {
-      const p = products.find(prod => prod.id === id);
-      if (!p) return;
-      const financials = calculateProductFinancials({ ...p, ...details } as Product);
-      await updateDoc(doc(db, 'products', id), { ...details, ...financials });
-    } catch (e) {
-      console.error('Edit Product Failed:', e);
-    }
+      const oldProduct = products.find(prod => prod.id === id);
+      if (!oldProduct) return;
+
+      const financials = calculateProductFinancials({ ...oldProduct, ...details } as Product);
+      const updatedProduct = { ...details, ...financials };
+
+      const deltaRevenue = (updatedProduct.totalRevenue || 0) - (oldProduct.totalRevenue || 0);
+      const deltaProfit = (updatedProduct.netProfit || 0) - (oldProduct.netProfit || 0);
+
+      await updateDoc(doc(db, 'products', id), updatedProduct);
+
+      if (deltaRevenue !== 0 || deltaProfit !== 0) {
+        await addDoc(collection(db, 'history'), {
+          date: new Date().toISOString().split('T')[0],
+          type: 'METRIC_UPDATE',
+          productId: id,
+          revenue: deltaRevenue,
+          netProfit: deltaProfit,
+          isCorrection: true
+        });
+      }
+    } catch (e) { console.error('Edit Product Failed:', e); }
   };
 
   const updateProductMetrics = async (id: string, metrics: any) => {
@@ -239,8 +252,8 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       };
 
       const financials = calculateProductFinancials({ ...p, ...updatedData } as Product);
-      const batchAdSpend = metrics.fbAds + metrics.tiktokAds;
-      const batchCosts = batchAdSpend + (metrics.confirmedOrders * (p.serviceFeePerUnit || 0)) + metrics.stockCost + metrics.extraFees + metrics.shippingFees;
+      const batchCosts = -(metrics.fbAds + metrics.tiktokAds + (metrics.confirmedOrders * (p.serviceFeePerUnit || 0)) + metrics.stockCost + metrics.extraFees + metrics.shippingFees);
+      const batchProfit = metrics.revenue + batchCosts;
 
       await addDoc(collection(db, 'history'), {
         date: new Date().toISOString().split('T')[0],
@@ -250,21 +263,13 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         orders: metrics.confirmedOrders,
         delivered: metrics.deliveredUnits,
         revenue: metrics.revenue,
-        adSpend: batchAdSpend,
+        adSpend: metrics.fbAds + metrics.tiktokAds,
         cogs: metrics.stockCost,
-        extraFees: metrics.extraFees,
-        shippingFees: metrics.shippingFees,
-        netProfit: metrics.revenue - batchCosts
+        netProfit: batchProfit
       });
 
-      let status: Product['status'] = 'Active';
-      if (updatedData.stockAvailable <= 0) status = 'Out of Stock';
-      else if (updatedData.stockAvailable < 20) status = 'Low Stock';
-
-      await updateDoc(doc(db, 'products', id), { ...updatedData, ...financials, status });
-    } catch (e) {
-      console.error('Update Metrics Failed:', e);
-    }
+      await updateDoc(doc(db, 'products', id), { ...updatedData, ...financials });
+    } catch (e) { console.error('Update Metrics Failed:', e); }
   };
 
   const addExpense = async (newExpense: Expense) => {
@@ -278,46 +283,32 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         expenseAmount: newExpense.amount,
         netProfit: -newExpense.amount
       });
-    } catch (e) {
-      console.error('Add Expense Failed:', e);
-    }
+    } catch (e) { console.error('Add Expense Failed:', e); }
   };
 
   const addShipment = async (shipment: Shipment) => {
     if (!isAuthenticated) return;
-    try {
-      await addDoc(collection(db, 'shipments'), shipment);
-    } catch (e) {
-      console.error('Add Shipment Failed:', e);
-    }
+    try { await addDoc(collection(db, 'shipments'), shipment); } catch (e) { console.error('Add Shipment Failed:', e); }
   };
 
   const addInvoice = async (invoice: Invoice) => {
     if (!isAuthenticated) return;
-    try {
-      await addDoc(collection(db, 'invoices'), invoice);
-    } catch (e) {
-      console.error('Add Invoice Failed:', e);
-    }
+    try { await addDoc(collection(db, 'invoices'), invoice); } catch (e) { console.error('Add Invoice Failed:', e); }
   };
 
   const toggleInvoiceStatus = async (id: string) => {
     if (!isAuthenticated) return;
     try {
       const inv = invoices.find(i => i.id === id);
-      if (inv) {
-        await updateDoc(doc(db, 'invoices', id), { status: inv.status === 'Paid' ? 'Unpaid' : 'Paid' });
-      }
-    } catch (e) {
-      console.error('Toggle Invoice Failed:', e);
-    }
+      if (inv) await updateDoc(doc(db, 'invoices', id), { status: inv.status === 'Paid' ? 'Unpaid' : 'Paid' });
+    } catch (e) { console.error('Toggle Invoice Failed:', e); }
   };
 
   return (
     <DataContext.Provider value={{ 
       products, expenses, monthlyStats, shipments, invoices, history,
       addProduct, deleteProduct, updateProductMetrics, editProductDetails,
-      addExpense, addShipment, addInvoice, toggleInvoiceStatus, 
+      addExpense, addShipment, addInvoice, toggleInvoiceStatus, clearAllData,
       login, logout, isAuthenticated, isLoading, user
     }}>
       {children}

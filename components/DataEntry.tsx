@@ -1,19 +1,59 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { useData } from '../context/DataContext';
-import { PlusCircle, Save, DollarSign, Package, Megaphone, Truck, CheckCircle, Ship, FileText, TrendingUp, Edit3, AlertTriangle, Trash2, Upload, X } from 'lucide-react';
+import { 
+  PlusCircle, 
+  Save, 
+  DollarSign, 
+  Package, 
+  Megaphone, 
+  Truck, 
+  CheckCircle, 
+  Ship, 
+  FileText, 
+  TrendingUp, 
+  Edit3, 
+  AlertTriangle, 
+  Upload, 
+  X,
+  Loader2,
+  Beaker,
+  Link as LinkIcon,
+  Heart
+} from 'lucide-react';
 
 type Tab = 'new_product' | 'update_stats' | 'edit_data' | 'add_expense' | 'sourcing';
 
 export const DataEntry: React.FC = () => {
-  const { products, addProduct, deleteProduct, updateProductMetrics, editProductDetails, addExpense, addShipment, addInvoice } = useData();
+  const { 
+    products, 
+    addProduct, 
+    deleteProduct, 
+    updateProductMetrics, 
+    editProductDetails, 
+    addExpense, 
+    addShipment, 
+    addInvoice
+  } = useData();
   const [activeTab, setActiveTab] = useState<Tab>('update_stats');
   const [message, setMessage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const editFileInputRef = useRef<HTMLInputElement>(null);
+  const shipmentFileInputRef = useRef<HTMLInputElement>(null);
 
   // 1. New Product State
   const [newProd, setNewProd] = useState({ 
-    name: '', market: '', stock: 0, cogs: 0, price: 0, serviceFee: 0, isTest: false, imageUrl: '' 
+    name: '', 
+    market: '', 
+    stock: 0, 
+    cogs: 0, 
+    price: 0, 
+    serviceFee: 0, 
+    isTest: false, 
+    imageUrl: '',
+    testAdSpend: 0,
+    testCpl: 0,
+    testResult: 'Pending' as 'Winner' | 'Loser' | 'Pending'
   });
   
   // 2. Update Metrics State
@@ -53,7 +93,17 @@ export const DataEntry: React.FC = () => {
   const [newExp, setNewExp] = useState({ name: '', category: 'Software', amount: 0, date: new Date().toISOString().split('T')[0] });
 
   // 5. Sourcing State
-  const [shipment, setShipment] = useState({ productName: '', forwarder: '', quantity: 0, date: '' });
+  const [shipment, setShipment] = useState({ 
+    productName: '', 
+    forwarder: '', 
+    quantity: 0, 
+    date: '', 
+    status: 'In Transit' as any,
+    imageUrl: '',
+    productLink: '',
+    trackingNumber: '',
+    istikharaDone: false
+  });
   const [invoice, setInvoice] = useState({ partner: '', amount: 0, link: '', date: '' });
 
   // Init selected product
@@ -107,7 +157,6 @@ export const DataEntry: React.FC = () => {
   const handleLaunchProduct = () => {
     if (!newProd.name || !newProd.market) return;
     const product: any = { 
-      id: Date.now().toString(),
       name: newProd.name,
       market: newProd.market,
       status: (newProd.stock > 0 ? 'Active' : 'Out of Stock'),
@@ -124,17 +173,17 @@ export const DataEntry: React.FC = () => {
       shippingFees: 0,
       adsFacebook: 0,
       adsTikTok: 0,
-      totalAdSpend: 0,
-      netProfit: -(Number(newProd.cogs) * Number(newProd.stock)),
+      totalAdSpend: newProd.isTest ? Number(newProd.testAdSpend) : 0,
+      netProfit: newProd.isTest ? -Number(newProd.testAdSpend) : -(Number(newProd.cogs) * Number(newProd.stock)),
       deliveryRate: 0,
       confirmationRate: 0,
       breakEvenDeliveryRate: 0,
-      cpl: 0,
+      cpl: newProd.isTest ? Number(newProd.testCpl) : 0,
       cpd: 0,
       sellingPrice: Number(newProd.price),
       isTest: newProd.isTest,
       imageUrl: newProd.imageUrl || '',
-      testResult: 'Pending',
+      testResult: newProd.isTest ? newProd.testResult : 'Pending',
       isSourced: false,
       cpdBreakeven: 0,
       cplBreakeven: 0,
@@ -142,17 +191,29 @@ export const DataEntry: React.FC = () => {
       profitMargin: 0
     };
     addProduct(product);
-    setNewProd({ name: '', market: '', stock: 0, cogs: 0, price: 0, serviceFee: 0, isTest: false, imageUrl: '' });
+    setNewProd({ 
+      name: '', 
+      market: '', 
+      stock: 0, 
+      cogs: 0, 
+      price: 0, 
+      serviceFee: 0, 
+      isTest: false, 
+      imageUrl: '',
+      testAdSpend: 0,
+      testCpl: 0,
+      testResult: 'Pending'
+    });
     if (fileInputRef.current) fileInputRef.current.value = '';
     showMessage(newProd.isTest ? 'Test Product Added!' : 'Product Launched!');
   };
 
   const handleDeleteProduct = () => {
       if (!selectedProductId) return;
-      if (window.confirm('Are you sure you want to delete this product permanently?')) {
+      if (window.confirm('Are you sure you want to delete this product?')) {
           deleteProduct(selectedProductId);
           setSelectedProductId(''); 
-          showMessage('Product deleted successfully.');
+          showMessage('Product removed.');
       }
   };
 
@@ -175,13 +236,13 @@ export const DataEntry: React.FC = () => {
         deliveredUnits: 0, stockAdded: 0, stockCost: 0, extraFees: 0, shippingFees: 0,
         revenue: 0
     });
-    showMessage('Metrics updated successfully!');
+    showMessage('Metrics updated!');
   };
 
   const handleEditData = () => {
     if (!selectedProductId) return;
     editProductDetails(selectedProductId, editData);
-    showMessage('Product data fully corrected & recalculated!');
+    showMessage('Data corrected!');
   };
 
   const handleAddExpense = () => {
@@ -205,9 +266,24 @@ export const DataEntry: React.FC = () => {
       forwarder: shipment.forwarder,
       quantity: Number(shipment.quantity),
       dateSent: shipment.date,
-      status: 'In Transit'
+      status: shipment.status,
+      imageUrl: shipment.imageUrl,
+      productLink: shipment.productLink,
+      trackingNumber: shipment.trackingNumber,
+      istikharaDone: shipment.istikharaDone
     });
-    setShipment({ productName: '', forwarder: '', quantity: 0, date: '' });
+    setShipment({ 
+      productName: '', 
+      forwarder: '', 
+      quantity: 0, 
+      date: '', 
+      status: 'In Transit', 
+      imageUrl: '', 
+      productLink: '', 
+      trackingNumber: '', 
+      istikharaDone: false 
+    });
+    if (shipmentFileInputRef.current) shipmentFileInputRef.current.value = '';
     showMessage('Shipment tracked!');
   }
 
@@ -244,7 +320,7 @@ export const DataEntry: React.FC = () => {
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Data Entry Center</h1>
-          <p className="text-slate-500">Manage products, expenses, sourcing, and payments.</p>
+          <p className="text-slate-500">Log daily performance, fix mistakes, or add new items.</p>
         </div>
         {message && (
           <div className="flex items-center gap-2 px-4 py-2 bg-emerald-100 text-emerald-700 rounded-lg animate-fade-in">
@@ -290,14 +366,39 @@ export const DataEntry: React.FC = () => {
                 <label className="text-sm font-medium text-slate-700">Service Fee Per Order</label>
                 <input type="number" value={newProd.serviceFee} onChange={(e) => setNewProd({...newProd, serviceFee: Number(e.target.value)})} className="w-full px-4 py-2 border border-slate-200 rounded-lg outline-none" placeholder="e.g. 5.00" />
               </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">Initial Stock</label>
-                <input type="number" value={newProd.stock} onChange={(e) => setNewProd({...newProd, stock: Number(e.target.value)})} className="w-full px-4 py-2 border border-slate-200 rounded-lg outline-none" placeholder="0" />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">COGS (Total for Stock)</label>
-                <input type="number" value={newProd.cogs} onChange={(e) => setNewProd({...newProd, cogs: Number(e.target.value)})} className="w-full px-4 py-2 border border-slate-200 rounded-lg outline-none" placeholder="Total cost" />
-              </div>
+
+              {newProd.isTest ? (
+                <>
+                  <div className="space-y-2 p-4 bg-purple-50 rounded-xl border border-purple-100">
+                    <label className="text-sm font-bold text-purple-900 flex items-center gap-1"><Megaphone size={14}/> Total Ads Spent on Test ($)</label>
+                    <input type="number" value={newProd.testAdSpend} onChange={(e) => setNewProd({...newProd, testAdSpend: Number(e.target.value)})} className="w-full px-4 py-2 border border-purple-200 rounded-lg outline-none" placeholder="0.00" />
+                  </div>
+                  <div className="space-y-2 p-4 bg-purple-50 rounded-xl border border-purple-100">
+                    <label className="text-sm font-bold text-purple-900 flex items-center gap-1"><Beaker size={14}/> Test Status</label>
+                    <select value={newProd.testResult} onChange={(e) => setNewProd({...newProd, testResult: e.target.value as any})} className="w-full px-4 py-2 border border-purple-200 rounded-lg outline-none bg-white">
+                      <option value="Pending">Still Testing (Pending)</option>
+                      <option value="Winner">Winner 🏆</option>
+                      <option value="Loser">Loser ❌</option>
+                    </select>
+                  </div>
+                  <div className="space-y-2 p-4 bg-purple-50 rounded-xl border border-purple-100 col-span-full">
+                    <label className="text-sm font-bold text-purple-900">Cost Per Lead (CPL) during test ($)</label>
+                    <input type="number" value={newProd.testCpl} onChange={(e) => setNewProd({...newProd, testCpl: Number(e.target.value)})} className="w-full px-4 py-2 border border-purple-200 rounded-lg outline-none" placeholder="e.g. 1.25" />
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-slate-700">Initial Stock</label>
+                    <input type="number" value={newProd.stock} onChange={(e) => setNewProd({...newProd, stock: Number(e.target.value)})} className="w-full px-4 py-2 border border-slate-200 rounded-lg outline-none" placeholder="0" />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-slate-700">COGS (Total for Stock)</label>
+                    <input type="number" value={newProd.cogs} onChange={(e) => setNewProd({...newProd, cogs: Number(e.target.value)})} className="w-full px-4 py-2 border border-slate-200 rounded-lg outline-none" placeholder="Total cost" />
+                  </div>
+                </>
+              )}
+
               <div className="space-y-2 col-span-2">
                 <label className="text-sm font-medium text-slate-700">Product Image</label>
                 <div className="mt-1 flex items-center gap-4 p-4 border-2 border-dashed border-slate-200 rounded-xl hover:border-blue-400 transition-colors">
@@ -311,8 +412,7 @@ export const DataEntry: React.FC = () => {
                       id="product-image-upload"
                     />
                     <label htmlFor="product-image-upload" className="flex items-center justify-center gap-2 cursor-pointer py-2 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-medium transition-colors">
-                      <Upload size={18} />
-                      Choose Image File
+                      Upload Image
                     </label>
                   </div>
                   {newProd.imageUrl ? (
@@ -349,7 +449,7 @@ export const DataEntry: React.FC = () => {
            <div className="space-y-6">
               <div className="p-4 bg-amber-50 text-amber-800 rounded-lg text-sm flex items-center gap-2">
                  <AlertTriangle size={18} />
-                 <span>Warning: Modifying these fields will overwrite the current accumulated data. Use this to fix errors.</span>
+                 <span>Warning: Overwriting these values will manually adjust totals.</span>
               </div>
               
               <div className="space-y-2">
@@ -386,29 +486,6 @@ export const DataEntry: React.FC = () => {
                             <label className="text-xs font-medium text-slate-500">Stock Avail.</label>
                             <input type="number" value={editData.stockAvailable} onChange={(e) => setEditData({...editData, stockAvailable: Number(e.target.value)})} className="w-full px-3 py-1.5 border rounded outline-none" />
                         </div>
-                        <div className="space-y-1 col-span-full mt-4">
-                            <label className="text-xs font-medium text-slate-500">Update Product Image</label>
-                            <div className="mt-1 flex items-center gap-4">
-                              <input 
-                                ref={editFileInputRef}
-                                type="file" 
-                                accept="image/*" 
-                                onChange={(e) => handleFileChange(e, (url) => setEditData({...editData, imageUrl: url}))}
-                                className="hidden" 
-                                id="edit-product-image-upload"
-                              />
-                              <label htmlFor="edit-product-image-upload" className="flex items-center gap-2 cursor-pointer py-1.5 px-4 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-md font-medium text-xs transition-colors">
-                                <Upload size={14} />
-                                Upload New Image
-                              </label>
-                              {editData.imageUrl && (
-                                <div className="flex items-center gap-2">
-                                  <img src={editData.imageUrl} className="w-10 h-10 rounded object-cover border" alt="current" />
-                                  <button onClick={() => setEditData({...editData, imageUrl: ''})} className="text-red-500 hover:text-red-700"><X size={14}/></button>
-                                </div>
-                              )}
-                            </div>
-                        </div>
                       </div>
                   </div>
 
@@ -420,11 +497,11 @@ export const DataEntry: React.FC = () => {
                          <input type="number" value={editData.totalLeads} onChange={(e) => setEditData({...editData, totalLeads: Number(e.target.value)})} className="w-full px-3 py-1.5 border rounded outline-none" />
                       </div>
                       <div className="space-y-1">
-                         <label className="text-xs font-medium text-slate-500">Total Confirmed Orders</label>
+                         <label className="text-xs font-medium text-slate-500">Confirmed Orders</label>
                          <input type="number" value={editData.totalOrders} onChange={(e) => setEditData({...editData, totalOrders: Number(e.target.value)})} className="w-full px-3 py-1.5 border rounded outline-none" />
                       </div>
                       <div className="space-y-1">
-                         <label className="text-xs font-medium text-slate-500">Total Delivered Units</label>
+                         <label className="text-xs font-medium text-slate-500">Delivered Units</label>
                          <input type="number" value={editData.totalDelivered} onChange={(e) => setEditData({...editData, totalDelivered: Number(e.target.value)})} className="w-full px-3 py-1.5 border rounded outline-none" />
                       </div>
                   </div>
@@ -437,12 +514,12 @@ export const DataEntry: React.FC = () => {
                          <input type="number" value={editData.totalRevenue} onChange={(e) => setEditData({...editData, totalRevenue: Number(e.target.value)})} className="w-full px-3 py-1.5 border rounded outline-none" />
                       </div>
                       <div className="space-y-1">
-                         <label className="text-xs font-medium text-slate-500">FB Ads Total ($ - Neg)</label>
-                         <input type="number" value={editData.adsFacebook} onChange={(e) => setEditData({...editData, adsFacebook: Number(e.target.value)})} className="w-full px-3 py-1.5 border rounded outline-none" placeholder="-100" />
+                         <label className="text-xs font-medium text-slate-500">FB Ads Total ($)</label>
+                         <input type="number" value={editData.adsFacebook} onChange={(e) => setEditData({...editData, adsFacebook: Number(e.target.value)})} className="w-full px-3 py-1.5 border rounded outline-none" />
                       </div>
                       <div className="space-y-1">
-                         <label className="text-xs font-medium text-slate-500">TikTok Ads Total ($ - Neg)</label>
-                         <input type="number" value={editData.adsTikTok} onChange={(e) => setEditData({...editData, adsTikTok: Number(e.target.value)})} className="w-full px-3 py-1.5 border rounded outline-none" placeholder="-100" />
+                         <label className="text-xs font-medium text-slate-500">TikTok Ads Total ($)</label>
+                         <input type="number" value={editData.adsTikTok} onChange={(e) => setEditData({...editData, adsTikTok: Number(e.target.value)})} className="w-full px-3 py-1.5 border rounded outline-none" />
                       </div>
                   </div>
 
@@ -450,26 +527,26 @@ export const DataEntry: React.FC = () => {
                   <div className="space-y-3">
                       <h4 className="font-semibold text-slate-800 text-sm">Other Costs</h4>
                       <div className="space-y-1">
-                         <label className="text-xs font-medium text-slate-500">COGS Total ($ - Neg)</label>
-                         <input type="number" value={editData.cogs} onChange={(e) => setEditData({...editData, cogs: Number(e.target.value)})} className="w-full px-3 py-1.5 border rounded outline-none" placeholder="-100" />
+                         <label className="text-xs font-medium text-slate-500">COGS Total ($)</label>
+                         <input type="number" value={editData.cogs} onChange={(e) => setEditData({...editData, cogs: Number(e.target.value)})} className="w-full px-3 py-1.5 border rounded outline-none" />
                       </div>
                       <div className="space-y-1">
-                         <label className="text-xs font-medium text-slate-500">Extra Fees ($ - Neg)</label>
+                         <label className="text-xs font-medium text-slate-500">Extra Fees ($)</label>
                          <input type="number" value={editData.extraFees} onChange={(e) => setEditData({...editData, extraFees: Number(e.target.value)})} className="w-full px-3 py-1.5 border rounded outline-none" />
                       </div>
                       <div className="space-y-1">
-                         <label className="text-xs font-medium text-slate-500">Shipping Fees ($ - Neg)</label>
+                         <label className="text-xs font-medium text-slate-500">Shipping Fees ($)</label>
                          <input type="number" value={editData.shippingFees} onChange={(e) => setEditData({...editData, shippingFees: Number(e.target.value)})} className="w-full px-3 py-1.5 border rounded outline-none" />
                       </div>
                   </div>
                </div>
 
                <div className="flex justify-between pt-4">
-                 <button onClick={handleDeleteProduct} className="px-6 py-2 bg-red-50 text-red-600 border border-red-100 rounded-lg font-medium hover:bg-red-100 transition-colors flex items-center gap-2">
-                   <Trash2 size={18} /> Delete Product
+                 <button onClick={handleDeleteProduct} className="px-6 py-2 bg-red-50 text-red-600 border border-red-100 rounded-lg font-medium hover:bg-red-100 transition-colors">
+                    Remove Product
                  </button>
                  <button onClick={handleEditData} className="px-6 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors flex items-center gap-2">
-                   <Save size={18} /> Overwrite Data & Recalculate
+                   <Save size={18} /> Save & Recalculate
                  </button>
                </div>
            </div>
@@ -498,10 +575,7 @@ export const DataEntry: React.FC = () => {
                 </div>
                 <div className="space-y-2">
                    <label className="text-xs font-medium text-slate-500 uppercase">Total Revenue ($)</label>
-                   <div className="flex items-center gap-2">
-                      <TrendingUp size={16} className="text-emerald-500"/>
-                      <input type="number" value={metrics.revenue} onChange={(e) => setMetrics({...metrics, revenue: Number(e.target.value)})} className="w-full px-3 py-2 bg-white border border-slate-200 rounded-md outline-none" />
-                   </div>
+                   <input type="number" value={metrics.revenue} onChange={(e) => setMetrics({...metrics, revenue: Number(e.target.value)})} className="w-full px-3 py-2 bg-white border border-slate-200 rounded-md outline-none" />
                 </div>
                 <div className="space-y-2">
                   <label className="text-xs font-medium text-slate-500 uppercase">Facebook Ads ($)</label>
@@ -520,19 +594,16 @@ export const DataEntry: React.FC = () => {
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <label className="text-xs font-medium text-slate-500 uppercase">New Leads</label>
-                    <input type="number" value={metrics.newLeads} onChange={(e) => setMetrics({...metrics, newLeads: Number(e.target.value)})} className="w-full px-3 py-2 bg-white border border-slate-200 rounded-md outline-none" placeholder="0" />
+                    <input type="number" value={metrics.newLeads} onChange={(e) => setMetrics({...metrics, newLeads: Number(e.target.value)})} className="w-full px-3 py-2 bg-white border border-slate-200 rounded-md outline-none" />
                   </div>
                   <div className="space-y-2">
                     <label className="text-xs font-medium text-slate-500 uppercase">Confirmed Orders</label>
-                    <input type="number" value={metrics.confirmedOrders} onChange={(e) => setMetrics({...metrics, confirmedOrders: Number(e.target.value)})} className="w-full px-3 py-2 bg-white border border-slate-200 rounded-md outline-none" placeholder="0" />
+                    <input type="number" value={metrics.confirmedOrders} onChange={(e) => setMetrics({...metrics, confirmedOrders: Number(e.target.value)})} className="w-full px-3 py-2 bg-white border border-slate-200 rounded-md outline-none" />
                   </div>
                 </div>
-                <div className="grid grid-cols-1 gap-4">
-                  <div className="space-y-2">
-                    <label className="text-xs font-medium text-slate-500 uppercase">Delivered Units</label>
-                    <input type="number" value={metrics.deliveredUnits} onChange={(e) => setMetrics({...metrics, deliveredUnits: Number(e.target.value)})} className="w-full px-3 py-2 bg-white border border-slate-200 rounded-md outline-none" placeholder="0" />
-                    <p className="text-[10px] text-slate-400">Fees auto-calculated based on unit fee</p>
-                  </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-medium text-slate-500 uppercase">Delivered Units</label>
+                  <input type="number" value={metrics.deliveredUnits} onChange={(e) => setMetrics({...metrics, deliveredUnits: Number(e.target.value)})} className="w-full px-3 py-2 bg-white border border-slate-200 rounded-md outline-none" />
                 </div>
               </div>
 
@@ -575,25 +646,87 @@ export const DataEntry: React.FC = () => {
         {activeTab === 'sourcing' && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
              <div className="space-y-6">
-                <h3 className="font-semibold text-slate-800 flex items-center gap-2"><Ship size={18}/> New Shipment Tracking</h3>
+                <h3 className="font-semibold text-slate-800 flex items-center gap-2"><Ship size={18}/> Shipment Tracking</h3>
                 <div className="space-y-3">
-                   <input type="text" placeholder="Product Name" className="w-full px-4 py-2 border rounded-lg" value={shipment.productName} onChange={e => setShipment({...shipment, productName: e.target.value})} />
-                   <input type="text" placeholder="Freight Forwarder" className="w-full px-4 py-2 border rounded-lg" value={shipment.forwarder} onChange={e => setShipment({...shipment, forwarder: e.target.value})} />
                    <div className="grid grid-cols-2 gap-3">
-                      <input type="number" placeholder="Quantity" className="w-full px-4 py-2 border rounded-lg" value={shipment.quantity} onChange={e => setShipment({...shipment, quantity: Number(e.target.value)})} />
-                      <input type="date" className="w-full px-4 py-2 border rounded-lg" value={shipment.date} onChange={e => setShipment({...shipment, date: e.target.value})} />
+                      <input type="text" placeholder="Product Name" className="w-full px-4 py-2 border rounded-lg outline-none" value={shipment.productName} onChange={e => setShipment({...shipment, productName: e.target.value})} />
+                      <input type="text" placeholder="Freight Forwarder" className="w-full px-4 py-2 border rounded-lg outline-none" value={shipment.forwarder} onChange={e => setShipment({...shipment, forwarder: e.target.value})} />
                    </div>
-                   <button onClick={handleAddShipment} className="w-full py-2 bg-slate-800 text-white rounded-lg font-medium">Add Shipment</button>
+                   <div className="grid grid-cols-2 gap-3">
+                      <input type="number" placeholder="Quantity" className="w-full px-4 py-2 border rounded-lg outline-none" value={shipment.quantity} onChange={e => setShipment({...shipment, quantity: Number(e.target.value)})} />
+                      <input type="date" className="w-full px-4 py-2 border rounded-lg outline-none" value={shipment.date} onChange={e => setShipment({...shipment, date: e.target.value})} />
+                   </div>
+                   
+                   <div className="space-y-2">
+                     <label className="text-xs font-semibold text-slate-500 uppercase">Tracking & Status</label>
+                     <div className="grid grid-cols-2 gap-3">
+                        <input type="text" placeholder="Tracking Number" className="w-full px-4 py-2 border rounded-lg outline-none" value={shipment.trackingNumber} onChange={e => setShipment({...shipment, trackingNumber: e.target.value})} />
+                        <select value={shipment.status} onChange={e => setShipment({...shipment, status: e.target.value as any})} className="w-full px-4 py-2 border rounded-lg outline-none bg-white">
+                          <option value="Sourcing">Sourcing</option>
+                          <option value="Shipped">Shipped</option>
+                          <option value="In Transit">In Transit</option>
+                          <option value="Customs">Customs</option>
+                          <option value="Delivered">Delivered</option>
+                        </select>
+                     </div>
+                     <div className="relative">
+                        <LinkIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                        <input type="text" placeholder="Product Link (URL)" className="w-full pl-10 pr-4 py-2 border rounded-lg outline-none" value={shipment.productLink} onChange={e => setShipment({...shipment, productLink: e.target.value})} />
+                     </div>
+                   </div>
+
+                   <div className="flex items-center gap-4 py-2">
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input type="checkbox" checked={shipment.istikharaDone} onChange={e => setShipment({...shipment, istikharaDone: e.target.checked})} className="w-5 h-5 text-blue-600 rounded focus:ring-blue-500 border-gray-300" />
+                        <span className="text-sm font-medium text-slate-900 flex items-center gap-1">
+                          <Heart size={14} className={shipment.istikharaDone ? "fill-red-500 text-red-500" : "text-slate-400"} />
+                          Salat Istikhara Done
+                        </span>
+                      </label>
+                   </div>
+
+                   <div className="space-y-2">
+                      <label className="text-sm font-medium text-slate-700">Stock Picture</label>
+                      <div className="mt-1 flex items-center gap-4 p-4 border-2 border-dashed border-slate-200 rounded-xl hover:border-blue-400 transition-colors">
+                        <div className="flex-1">
+                          <input 
+                            ref={shipmentFileInputRef}
+                            type="file" 
+                            accept="image/*" 
+                            onChange={(e) => handleFileChange(e, (url) => setShipment({...shipment, imageUrl: url}))}
+                            className="hidden" 
+                            id="shipment-image-upload"
+                          />
+                          <label htmlFor="shipment-image-upload" className="flex items-center justify-center gap-2 cursor-pointer py-2 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-medium transition-colors">
+                            <Upload size={16} /> Upload Stock Pic
+                          </label>
+                        </div>
+                        {shipment.imageUrl ? (
+                          <div className="relative w-16 h-16 rounded-lg overflow-hidden border border-slate-200 shadow-sm group">
+                            <img src={shipment.imageUrl} alt="preview" className="w-full h-full object-cover" />
+                            <button onClick={() => setShipment({...shipment, imageUrl: ''})} className="absolute top-1 right-1 p-0.5 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity">
+                              <X size={10} />
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="w-16 h-16 bg-slate-50 border border-slate-100 rounded-lg flex items-center justify-center text-slate-300">
+                            <Package size={20} />
+                          </div>
+                        )}
+                      </div>
+                   </div>
+
+                   <button onClick={handleAddShipment} className="w-full py-2 bg-slate-800 text-white rounded-lg font-medium hover:bg-slate-900 shadow-md">Add Shipment</button>
                 </div>
              </div>
 
              <div className="space-y-6 border-t lg:border-t-0 lg:border-l border-slate-100 lg:pl-8">
                 <h3 className="font-semibold text-slate-800 flex items-center gap-2"><FileText size={18}/> Partner Invoice</h3>
                 <div className="space-y-3">
-                   <input type="text" placeholder="Partner Name (e.g. Delivery Co)" className="w-full px-4 py-2 border rounded-lg" value={invoice.partner} onChange={e => setInvoice({...invoice, partner: e.target.value})} />
-                   <input type="number" placeholder="Amount ($)" className="w-full px-4 py-2 border rounded-lg" value={invoice.amount} onChange={e => setInvoice({...invoice, amount: Number(e.target.value)})} />
-                   <input type="text" placeholder="Invoice Link (Drive/Dropbox)" className="w-full px-4 py-2 border rounded-lg" value={invoice.link} onChange={e => setInvoice({...invoice, link: e.target.value})} />
-                   <input type="date" className="w-full px-4 py-2 border rounded-lg" value={invoice.date} onChange={e => setInvoice({...invoice, date: e.target.value})} />
+                   <input type="text" placeholder="Partner Name" className="w-full px-4 py-2 border rounded-lg outline-none" value={invoice.partner} onChange={e => setInvoice({...invoice, partner: e.target.value})} />
+                   <input type="number" placeholder="Amount ($)" className="w-full px-4 py-2 border rounded-lg outline-none" value={invoice.amount} onChange={e => setInvoice({...invoice, amount: Number(e.target.value)})} />
+                   <input type="text" placeholder="Invoice Link" className="w-full px-4 py-2 border rounded-lg outline-none" value={invoice.link} onChange={e => setInvoice({...invoice, link: e.target.value})} />
+                   <input type="date" className="w-full px-4 py-2 border rounded-lg outline-none" value={invoice.date} onChange={e => setInvoice({...invoice, date: e.target.value})} />
                    <button onClick={handleAddInvoice} className="w-full py-2 bg-blue-600 text-white rounded-lg font-medium">Add Invoice</button>
                 </div>
              </div>

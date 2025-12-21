@@ -1,3 +1,4 @@
+
 export interface Product {
   id: string;
   name: string;
@@ -69,7 +70,12 @@ export interface Shipment {
   forwarder: string;
   dateSent: string;
   quantity: number;
-  status: 'In Transit' | 'Customs' | 'Delivered';
+  status: 'Sourcing' | 'Shipped' | 'In Transit' | 'Customs' | 'Delivered';
+  // New Fields
+  imageUrl?: string;
+  productLink?: string;
+  trackingNumber?: string;
+  istikharaDone: boolean;
 }
 
 export interface Invoice {
