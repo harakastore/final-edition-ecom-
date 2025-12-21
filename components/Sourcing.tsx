@@ -10,7 +10,11 @@ import {
   Heart, 
   Truck, 
   Image as ImageIcon,
-  PackageSearch
+  PackageSearch,
+  Plane,
+  Anchor,
+  Globe,
+  ArrowRight
 } from 'lucide-react';
 
 export const Sourcing: React.FC = () => {
@@ -21,18 +25,18 @@ export const Sourcing: React.FC = () => {
       {/* Shipments Section */}
       <div className="space-y-4">
         <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
-           <Ship className="text-blue-600" /> Incoming Stock & Shipments
+           <Ship className="text-blue-600" /> Logistics & Shipment Tracking
         </h2>
         <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
            <table className="w-full text-sm text-left">
               <thead className="bg-slate-50 text-slate-500 uppercase text-[10px] font-bold tracking-wider">
                  <tr>
                     <th className="px-6 py-4">Stock Pic</th>
-                    <th className="px-6 py-4">Product / Link</th>
-                    <th className="px-6 py-4">Forwarder</th>
-                    <th className="px-6 py-4">Tracking #</th>
+                    <th className="px-6 py-4">Contents</th>
+                    <th className="px-6 py-4">Route</th>
+                    <th className="px-6 py-4">Supplier / Forwarder</th>
+                    <th className="px-6 py-4">Method & Tracking</th>
                     <th className="px-6 py-4">Istikhara</th>
-                    <th className="px-6 py-4">Qty</th>
                     <th className="px-6 py-4">Status</th>
                  </tr>
               </thead>
@@ -52,40 +56,67 @@ export const Sourcing: React.FC = () => {
                              </div>
                           </td>
                           <td className="px-6 py-4">
-                             <div className="flex flex-col">
-                                <span className="font-bold text-slate-800">{ship.productName}</span>
+                             <div className="space-y-1">
+                                {ship.products && ship.products.length > 0 ? (
+                                   ship.products.map((item, idx) => (
+                                      <div key={idx} className="flex items-center gap-1.5 text-xs">
+                                         <span className="font-bold text-slate-800">{item.name}</span>
+                                         <span className="text-slate-400 font-medium">x{item.quantity}</span>
+                                      </div>
+                                   ))
+                                ) : (
+                                   <span className="text-slate-400 italic">No items listed</span>
+                                )}
                                 {ship.productLink && (
                                    <a 
                                       href={ship.productLink} 
                                       target="_blank" 
                                       rel="noreferrer" 
-                                      className="text-blue-500 hover:underline flex items-center gap-1 text-[10px] mt-1"
+                                      className="text-blue-500 hover:underline flex items-center gap-1 text-[9px] font-bold mt-1"
                                    >
-                                      <ExternalLink size={10} /> Product Link
+                                      <ExternalLink size={10} /> View Product
                                    </a>
                                 )}
                              </div>
                           </td>
-                          <td className="px-6 py-4 text-slate-600 font-medium">{ship.forwarder}</td>
                           <td className="px-6 py-4">
-                             {ship.trackingNumber ? (
-                                <div className="flex items-center gap-1.5 text-slate-700 bg-slate-100 px-2 py-1 rounded w-fit text-[11px] font-mono">
-                                   <Truck size={12} className="text-slate-400" />
-                                   {ship.trackingNumber}
+                             <div className="flex flex-col gap-1">
+                                <div className="flex items-center gap-2 text-xs font-medium text-slate-700">
+                                   <Globe size={12} className="text-slate-400" />
+                                   <span>{ship.originCountry || 'N/A'}</span>
+                                   <ArrowRight size={10} className="text-slate-300" />
+                                   <span className="text-blue-600 font-bold">{ship.destinationCountry || 'N/A'}</span>
                                 </div>
-                             ) : (
-                                <span className="text-slate-300 italic text-[11px]">N/A</span>
-                             )}
-                             <p className="text-[10px] text-slate-400 mt-1">{ship.dateSent}</p>
+                             </div>
+                          </td>
+                          <td className="px-6 py-4">
+                             <div className="flex flex-col">
+                                <span className="font-bold text-slate-800 text-xs">{ship.supplierName || 'N/A'}</span>
+                                <span className="text-[10px] text-slate-400 font-medium uppercase mt-0.5">{ship.forwarder || 'N/A'}</span>
+                             </div>
+                          </td>
+                          <td className="px-6 py-4">
+                             <div className="flex flex-col gap-2">
+                                <div className={`flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-bold border w-fit uppercase ${ship.shipmentMethod === 'Air' ? 'bg-blue-50 text-blue-700 border-blue-100' : 'bg-amber-50 text-amber-700 border-amber-100'}`}>
+                                   {ship.shipmentMethod === 'Air' ? <Plane size={10} /> : <Anchor size={10} />}
+                                   Via {ship.shipmentMethod || 'Air'}
+                                </div>
+                                {ship.trackingNumber ? (
+                                   <div className="flex items-center gap-1.5 text-slate-700 bg-slate-100 px-2 py-1 rounded w-fit text-[10px] font-mono border border-slate-200">
+                                      <Truck size={12} className="text-slate-400" />
+                                      {ship.trackingNumber}
+                                   </div>
+                                ) : (
+                                   <span className="text-slate-300 italic text-[10px]">No Tracking #</span>
+                                )}
+                                <p className="text-[9px] text-slate-400">{ship.dateSent}</p>
+                             </div>
                           </td>
                           <td className="px-6 py-4 text-center">
                              <div className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold ${ship.istikharaDone ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 'bg-slate-50 text-slate-400 border border-slate-100'}`}>
                                 <Heart size={10} className={ship.istikharaDone ? "fill-emerald-600" : ""} />
                                 {ship.istikharaDone ? 'DONE' : 'PENDING'}
                              </div>
-                          </td>
-                          <td className="px-6 py-4 font-black text-slate-800 tracking-tight">
-                             {ship.quantity.toLocaleString()}
                           </td>
                           <td className="px-6 py-4">
                              <span className={`px-2 py-1 rounded-full text-[10px] font-bold tracking-wide uppercase
@@ -108,7 +139,7 @@ export const Sourcing: React.FC = () => {
       {/* Invoices Section */}
       <div className="space-y-4">
         <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
-           <FileText className="text-emerald-600" /> Partner Payments
+           <FileText className="text-emerald-600" /> Partner Payments & Invoices
         </h2>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
            {invoices.length === 0 ? (

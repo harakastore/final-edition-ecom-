@@ -51,7 +51,8 @@ export interface Product {
 export interface Expense {
   id: string;
   name: string;
-  category: 'Software' | 'Service' | 'Ads' | 'Shipping' | 'Other';
+  category: string; // Changed to string to allow custom categories
+  description?: string; // New field for detailed description
   amount: number;
   date: string;
   productId?: string;
@@ -64,14 +65,23 @@ export interface MonthlyStat {
   orders: number;
 }
 
+export interface ShipmentItem {
+  name: string;
+  quantity: number;
+}
+
 export interface Shipment {
   id: string;
-  productName: string;
+  products: ShipmentItem[]; // Multiple products per shipment
   forwarder: string;
+  supplierName: string;
+  originCountry: string;
+  destinationCountry: string;
+  shipmentMethod: 'Air' | 'Sea';
   dateSent: string;
-  quantity: number;
   status: 'Sourcing' | 'Shipped' | 'In Transit' | 'Customs' | 'Delivered';
-  // New Fields
+  
+  // Metadata
   imageUrl?: string;
   productLink?: string;
   trackingNumber?: string;

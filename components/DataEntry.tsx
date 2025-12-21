@@ -19,8 +19,16 @@ import {
   Loader2,
   Beaker,
   Link as LinkIcon,
-  Heart
+  Heart,
+  Plane,
+  Anchor,
+  Plus,
+  Trash2,
+  Globe,
+  Tag,
+  AlignLeft
 } from 'lucide-react';
+import { ShipmentItem } from '../types';
 
 type Tab = 'new_product' | 'update_stats' | 'edit_data' | 'add_expense' | 'sourcing';
 
@@ -90,15 +98,27 @@ export const DataEntry: React.FC = () => {
   });
 
   // 4. New Expense State
-  const [newExp, setNewExp] = useState({ name: '', category: 'Software', amount: 0, date: new Date().toISOString().split('T')[0] });
+  const [newExp, setNewExp] = useState({ 
+    name: '', 
+    category: 'Software', 
+    description: '',
+    amount: 0, 
+    date: new Date().toISOString().split('T')[0] 
+  });
 
-  // 5. Sourcing State
+  // 5. Sourcing State (Refactored for multi-product)
+  const [shipmentItems, setShipmentItems] = useState<ShipmentItem[]>([]);
+  const [newItemName, setNewItemName] = useState('');
+  const [newItemQty, setNewItemQty] = useState(0);
+
   const [shipment, setShipment] = useState({ 
-    productName: '', 
+    supplierName: '',
+    originCountry: '',
+    destinationCountry: '',
     forwarder: '', 
-    quantity: 0, 
     date: '', 
     status: 'In Transit' as any,
+    shipmentMethod: 'Air' as 'Air' | 'Sea',
     imageUrl: '',
     productLink: '',
     trackingNumber: '',
@@ -250,39 +270,67 @@ export const DataEntry: React.FC = () => {
     addExpense({
       id: Date.now().toString(),
       name: newExp.name,
-      category: newExp.category as any,
+      category: newExp.category,
+      description: newExp.description,
       amount: Number(newExp.amount),
       date: newExp.date
     });
-    setNewExp({ name: '', category: 'Software', amount: 0, date: new Date().toISOString().split('T')[0] });
+    setNewExp({ 
+      name: '', 
+      category: 'Software', 
+      description: '',
+      amount: 0, 
+      date: new Date().toISOString().split('T')[0] 
+    });
     showMessage('Expense recorded!');
   };
 
+  const addItemToShipment = () => {
+    if (!newItemName || newItemQty <= 0) return;
+    setShipmentItems([...shipmentItems, { name: newItemName, quantity: newItemQty }]);
+    setNewItemName('');
+    setNewItemQty(0);
+  };
+
+  const removeItemFromShipment = (index: number) => {
+    setShipmentItems(shipmentItems.filter((_, i) => i !== index));
+  };
+
   const handleAddShipment = () => {
-    if(!shipment.productName) return;
+    if (shipmentItems.length === 0) {
+      alert("Please add at least one product to the shipment list.");
+      return;
+    }
     addShipment({
       id: Date.now().toString(),
-      productName: shipment.productName,
+      products: shipmentItems,
+      supplierName: shipment.supplierName,
+      originCountry: shipment.originCountry,
+      destinationCountry: shipment.destinationCountry,
       forwarder: shipment.forwarder,
-      quantity: Number(shipment.quantity),
       dateSent: shipment.date,
       status: shipment.status,
+      shipmentMethod: shipment.shipmentMethod,
       imageUrl: shipment.imageUrl,
       productLink: shipment.productLink,
       trackingNumber: shipment.trackingNumber,
       istikharaDone: shipment.istikharaDone
     });
+    // Reset state
     setShipment({ 
-      productName: '', 
+      supplierName: '',
+      originCountry: '',
+      destinationCountry: '',
       forwarder: '', 
-      quantity: 0, 
       date: '', 
       status: 'In Transit', 
+      shipmentMethod: 'Air',
       imageUrl: '', 
       productLink: '', 
       trackingNumber: '', 
       istikharaDone: false 
     });
+    setShipmentItems([]);
     if (shipmentFileInputRef.current) shipmentFileInputRef.current.value = '';
     showMessage('Shipment tracked!');
   }
@@ -647,20 +695,84 @@ export const DataEntry: React.FC = () => {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
              <div className="space-y-6">
                 <h3 className="font-semibold text-slate-800 flex items-center gap-2"><Ship size={18}/> Shipment Tracking</h3>
+                
+                {/* Multi-Product List Section */}
+                <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-4">
+                   <div className="flex items-center gap-2 text-xs font-bold text-slate-500 uppercase">
+                      <Plus size={14} /> Add Products to Shipment
+                   </div>
+                   <div className="flex gap-2">
+                      <input 
+                        type="text" 
+                        placeholder="Product Name" 
+                        className="flex-1 px-4 py-2 border rounded-lg outline-none text-sm" 
+                        value={newItemName} 
+                        onChange={e => setNewItemName(e.target.value)} 
+                      />
+                      <input 
+                        type="number" 
+                        placeholder="Qty" 
+                        className="w-24 px-4 py-2 border rounded-lg outline-none text-sm" 
+                        value={newItemQty} 
+                        onChange={e => setNewItemQty(Number(e.target.value))} 
+                      />
+                      <button 
+                        onClick={addItemToShipment}
+                        className="bg-blue-600 text-white p-2 rounded-lg hover:bg-blue-700 transition-colors"
+                      >
+                         <Plus size={20} />
+                      </button>
+                   </div>
+                   {shipmentItems.length > 0 && (
+                      <div className="space-y-2 mt-2">
+                         {shipmentItems.map((item, idx) => (
+                            <div key={idx} className="flex items-center justify-between bg-white px-3 py-2 rounded-lg border border-slate-200 text-sm">
+                               <span className="font-medium">{item.name} <span className="text-slate-400">x</span> {item.quantity}</span>
+                               <button onClick={() => removeItemFromShipment(idx)} className="text-red-500 hover:text-red-700">
+                                  <Trash2 size={16} />
+                               </button>
+                            </div>
+                         ))}
+                      </div>
+                   )}
+                </div>
+
                 <div className="space-y-3">
-                   <div className="grid grid-cols-2 gap-3">
-                      <input type="text" placeholder="Product Name" className="w-full px-4 py-2 border rounded-lg outline-none" value={shipment.productName} onChange={e => setShipment({...shipment, productName: e.target.value})} />
-                      <input type="text" placeholder="Freight Forwarder" className="w-full px-4 py-2 border rounded-lg outline-none" value={shipment.forwarder} onChange={e => setShipment({...shipment, forwarder: e.target.value})} />
+                   <div className="grid grid-cols-1 gap-3">
+                      <input type="text" placeholder="Supplier Name" className="w-full px-4 py-2 border rounded-lg outline-none" value={shipment.supplierName} onChange={e => setShipment({...shipment, supplierName: e.target.value})} />
                    </div>
                    <div className="grid grid-cols-2 gap-3">
-                      <input type="number" placeholder="Quantity" className="w-full px-4 py-2 border rounded-lg outline-none" value={shipment.quantity} onChange={e => setShipment({...shipment, quantity: Number(e.target.value)})} />
+                      <div className="relative">
+                        <Globe className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                        <input type="text" placeholder="Origin Country" className="w-full pl-10 pr-4 py-2 border rounded-lg outline-none" value={shipment.originCountry} onChange={e => setShipment({...shipment, originCountry: e.target.value})} />
+                      </div>
+                      <div className="relative">
+                        <Globe className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                        <input type="text" placeholder="Destination" className="w-full pl-10 pr-4 py-2 border rounded-lg outline-none" value={shipment.destinationCountry} onChange={e => setShipment({...shipment, destinationCountry: e.target.value})} />
+                      </div>
+                   </div>
+                   <div className="grid grid-cols-2 gap-3">
+                      <input type="text" placeholder="Freight Forwarder" className="w-full px-4 py-2 border rounded-lg outline-none" value={shipment.forwarder} onChange={e => setShipment({...shipment, forwarder: e.target.value})} />
                       <input type="date" className="w-full px-4 py-2 border rounded-lg outline-none" value={shipment.date} onChange={e => setShipment({...shipment, date: e.target.value})} />
                    </div>
                    
                    <div className="space-y-2">
-                     <label className="text-xs font-semibold text-slate-500 uppercase">Tracking & Status</label>
+                     <label className="text-xs font-semibold text-slate-500 uppercase">Shipment Way & Tracking</label>
                      <div className="grid grid-cols-2 gap-3">
-                        <input type="text" placeholder="Tracking Number" className="w-full px-4 py-2 border rounded-lg outline-none" value={shipment.trackingNumber} onChange={e => setShipment({...shipment, trackingNumber: e.target.value})} />
+                        <div className="flex bg-slate-100 p-1 rounded-lg border border-slate-200">
+                           <button 
+                             onClick={() => setShipment({...shipment, shipmentMethod: 'Air'})}
+                             className={`flex-1 flex items-center justify-center gap-1.5 py-1 text-xs font-bold rounded ${shipment.shipmentMethod === 'Air' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500'}`}
+                           >
+                              <Plane size={14} /> Air
+                           </button>
+                           <button 
+                             onClick={() => setShipment({...shipment, shipmentMethod: 'Sea'})}
+                             className={`flex-1 flex items-center justify-center gap-1.5 py-1 text-xs font-bold rounded ${shipment.shipmentMethod === 'Sea' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500'}`}
+                           >
+                              <Anchor size={14} /> Sea
+                           </button>
+                        </div>
                         <select value={shipment.status} onChange={e => setShipment({...shipment, status: e.target.value as any})} className="w-full px-4 py-2 border rounded-lg outline-none bg-white">
                           <option value="Sourcing">Sourcing</option>
                           <option value="Shipped">Shipped</option>
@@ -669,9 +781,12 @@ export const DataEntry: React.FC = () => {
                           <option value="Delivered">Delivered</option>
                         </select>
                      </div>
-                     <div className="relative">
-                        <LinkIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-                        <input type="text" placeholder="Product Link (URL)" className="w-full pl-10 pr-4 py-2 border rounded-lg outline-none" value={shipment.productLink} onChange={e => setShipment({...shipment, productLink: e.target.value})} />
+                     <div className="grid grid-cols-2 gap-3 mt-3">
+                        <input type="text" placeholder="Tracking Number" className="w-full px-4 py-2 border rounded-lg outline-none" value={shipment.trackingNumber} onChange={e => setShipment({...shipment, trackingNumber: e.target.value})} />
+                        <div className="relative">
+                           <LinkIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                           <input type="text" placeholder="Product Link (URL)" className="w-full pl-10 pr-4 py-2 border rounded-lg outline-none" value={shipment.productLink} onChange={e => setShipment({...shipment, productLink: e.target.value})} />
+                        </div>
                      </div>
                    </div>
 
@@ -716,7 +831,7 @@ export const DataEntry: React.FC = () => {
                       </div>
                    </div>
 
-                   <button onClick={handleAddShipment} className="w-full py-2 bg-slate-800 text-white rounded-lg font-medium hover:bg-slate-900 shadow-md">Add Shipment</button>
+                   <button onClick={handleAddShipment} className="w-full py-2 bg-slate-800 text-white rounded-lg font-medium hover:bg-slate-900 shadow-md">Track Shipment</button>
                 </div>
              </div>
 
@@ -737,16 +852,78 @@ export const DataEntry: React.FC = () => {
         {activeTab === 'add_expense' && (
           <div className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <input type="text" placeholder="Description" value={newExp.name} onChange={(e) => setNewExp({...newExp, name: e.target.value})} className="w-full px-4 py-2 border border-slate-200 rounded-lg outline-none" />
-              <select value={newExp.category} onChange={(e) => setNewExp({...newExp, category: e.target.value})} className="w-full px-4 py-2 border border-slate-200 rounded-lg outline-none">
-                <option>Software</option>
-                <option>Service</option>
-                <option>Ads</option>
-                <option>Shipping</option>
-                <option>Other</option>
-              </select>
-              <input type="number" placeholder="Amount ($)" value={newExp.amount} onChange={(e) => setNewExp({...newExp, amount: Number(e.target.value)})} className="w-full px-4 py-2 border border-slate-200 rounded-lg outline-none" />
-              <input type="date" value={newExp.date} onChange={(e) => setNewExp({...newExp, date: e.target.value})} className="w-full px-4 py-2 border border-slate-200 rounded-lg outline-none" />
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-700 flex items-center gap-2">
+                   <FileText size={16} /> Title / Short Name
+                </label>
+                <input 
+                  type="text" 
+                  placeholder="e.g. Server Hosting" 
+                  value={newExp.name} 
+                  onChange={(e) => setNewExp({...newExp, name: e.target.value})} 
+                  className="w-full px-4 py-2 border border-slate-200 rounded-lg outline-none" 
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-700 flex items-center gap-2">
+                   <Tag size={16} /> Category
+                </label>
+                <input 
+                  type="text" 
+                  list="expense-categories" 
+                  placeholder="Select or type new category" 
+                  value={newExp.category} 
+                  onChange={(e) => setNewExp({...newExp, category: e.target.value})} 
+                  className="w-full px-4 py-2 border border-slate-200 rounded-lg outline-none" 
+                />
+                <datalist id="expense-categories">
+                   <option value="Software" />
+                   <option value="Service" />
+                   <option value="Ads" />
+                   <option value="Shipping" />
+                   <option value="Rent" />
+                   <option value="Salaries" />
+                   <option value="Other" />
+                </datalist>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-700 flex items-center gap-2">
+                   <DollarSign size={16} /> Amount ($)
+                </label>
+                <input 
+                  type="number" 
+                  placeholder="0.00" 
+                  value={newExp.amount} 
+                  onChange={(e) => setNewExp({...newExp, amount: Number(e.target.value)})} 
+                  className="w-full px-4 py-2 border border-slate-200 rounded-lg outline-none" 
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-700 flex items-center gap-2">
+                   <Save size={16} /> Date
+                </label>
+                <input 
+                  type="date" 
+                  value={newExp.date} 
+                  onChange={(e) => setNewExp({...newExp, date: e.target.value})} 
+                  className="w-full px-4 py-2 border border-slate-200 rounded-lg outline-none" 
+                />
+              </div>
+
+              <div className="space-y-2 col-span-full">
+                <label className="text-sm font-medium text-slate-700 flex items-center gap-2">
+                   <AlignLeft size={16} /> Detailed Description
+                </label>
+                <textarea 
+                  placeholder="Enter details about this expense..." 
+                  value={newExp.description} 
+                  onChange={(e) => setNewExp({...newExp, description: e.target.value})} 
+                  className="w-full px-4 py-2 border border-slate-200 rounded-lg outline-none h-24 resize-none" 
+                />
+              </div>
             </div>
             <div className="flex justify-end pt-4">
               <button onClick={handleAddExpense} className="px-6 py-2 bg-slate-900 text-white rounded-lg font-medium hover:bg-slate-800 transition-colors">Record Expense</button>
