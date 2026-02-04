@@ -1,4 +1,3 @@
-
 import React, { createContext, useContext, useState, ReactNode, useEffect } from 'react';
 import { initializeApp } from 'firebase/app';
 import { 
@@ -12,12 +11,12 @@ import {
   query,
   orderBy,
   getDocs,
-  writeBatch,
-  FirestoreError
+  writeBatch
 } from 'firebase/firestore';
 import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut, User } from 'firebase/auth';
 import { Product, Expense, MonthlyStat, Shipment, Invoice, HistoryLog } from '../types';
 
+// For Firebase JS SDK v7.20.0 and later, measurementId is optional
 const firebaseConfig = {
   apiKey: "AIzaSyDnclwGNEea9CTIdFN31fbuvz7eJSGcbrI",
   authDomain: "ecom-empire-ae98b.firebaseapp.com",
@@ -44,8 +43,14 @@ interface DataContextType {
   updateProductMetrics: (id: string, metrics: any) => Promise<void>;
   editProductDetails: (id: string, details: any) => Promise<void>;
   addExpense: (expense: Expense) => Promise<void>;
+  editExpense: (id: string, expense: Partial<Expense>) => Promise<void>;
+  deleteExpense: (id: string) => Promise<void>;
   addShipment: (shipment: Shipment) => Promise<void>;
+  editShipment: (id: string, shipment: Partial<Shipment>) => Promise<void>;
+  deleteShipment: (id: string) => Promise<void>;
   addInvoice: (invoice: Invoice) => Promise<void>;
+  editInvoice: (id: string, invoice: Partial<Invoice>) => Promise<void>;
+  deleteInvoice: (id: string) => Promise<void>;
   toggleInvoiceStatus: (id: string) => Promise<void>;
   clearAllData: () => Promise<void>;
   login: (email: string, pass: string) => Promise<void>;
@@ -121,22 +126,14 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   const clearAllData = async () => {
-    if (!isAuthenticated) {
-      console.warn("User not authenticated, cannot clear data.");
-      return;
-    }
-    
-    // 1. Immediately clear local state to show 0 in UI
+    if (!isAuthenticated) return;
     setProducts([]); setHistory([]); setExpenses([]); setShipments([]); setInvoices([]);
-    
     const collections = ['products', 'expenses', 'shipments', 'invoices', 'history'];
     try {
       for (const collName of collections) {
         const querySnapshot = await getDocs(collection(db, collName));
         if (querySnapshot.empty) continue;
-        
         const docsToDelete = querySnapshot.docs;
-        // Process in smaller batches for maximum reliability
         for (let i = 0; i < docsToDelete.length; i += 100) {
           const batch = writeBatch(db);
           const chunk = docsToDelete.slice(i, i + 100);
@@ -144,11 +141,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           await batch.commit();
         }
       }
-      console.log("Database successfully purged.");
-    } catch (e) {
-      console.error("Master Purge Failed:", e);
-      throw e;
-    }
+    } catch (e) { console.error("Master Purge Failed:", e); throw e; }
   };
 
   const calculateProductFinancials = (p: Product) => {
@@ -178,8 +171,6 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       deliveryRate: totalLeads > 0 ? parseFloat(((totalDelivered / totalLeads) * 100).toFixed(1)) : 0,
       confirmationRate: totalLeads > 0 ? parseFloat(((totalOrders / totalLeads) * 100).toFixed(1)) : 0,
       profitMargin: totalRevenue > 0 ? parseFloat(((netProfit / totalRevenue) * 100).toFixed(1)) : 0,
-      cpdBreakeven: 0,
-      cplBreakeven: 0
     };
   };
 
@@ -209,25 +200,9 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     try {
       const oldProduct = products.find(prod => prod.id === id);
       if (!oldProduct) return;
-
       const financials = calculateProductFinancials({ ...oldProduct, ...details } as Product);
       const updatedProduct = { ...details, ...financials };
-
-      const deltaRevenue = (updatedProduct.totalRevenue || 0) - (oldProduct.totalRevenue || 0);
-      const deltaProfit = (updatedProduct.netProfit || 0) - (oldProduct.netProfit || 0);
-
       await updateDoc(doc(db, 'products', id), updatedProduct);
-
-      if (deltaRevenue !== 0 || deltaProfit !== 0) {
-        await addDoc(collection(db, 'history'), {
-          date: new Date().toISOString().split('T')[0],
-          type: 'METRIC_UPDATE',
-          productId: id,
-          revenue: deltaRevenue,
-          netProfit: deltaProfit,
-          isCorrection: true
-        });
-      }
     } catch (e) { console.error('Edit Product Failed:', e); }
   };
 
@@ -236,7 +211,6 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     try {
       const p = products.find(prod => prod.id === id);
       if (!p) return;
-
       const updatedData = {
         totalLeads: (p.totalLeads || 0) + metrics.newLeads,
         totalOrders: (p.totalOrders || 0) + metrics.confirmedOrders,
@@ -250,24 +224,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         stockAvailable: (p.stockAvailable || 0) + metrics.stockAdded - metrics.deliveredUnits,
         stockTotal: (p.stockTotal || 0) + metrics.stockAdded
       };
-
       const financials = calculateProductFinancials({ ...p, ...updatedData } as Product);
-      const batchCosts = -(metrics.fbAds + metrics.tiktokAds + (metrics.confirmedOrders * (p.serviceFeePerUnit || 0)) + metrics.stockCost + metrics.extraFees + metrics.shippingFees);
-      const batchProfit = metrics.revenue + batchCosts;
-
-      await addDoc(collection(db, 'history'), {
-        date: new Date().toISOString().split('T')[0],
-        type: 'METRIC_UPDATE',
-        productId: id,
-        leads: metrics.newLeads,
-        orders: metrics.confirmedOrders,
-        delivered: metrics.deliveredUnits,
-        revenue: metrics.revenue,
-        adSpend: metrics.fbAds + metrics.tiktokAds,
-        cogs: metrics.stockCost,
-        netProfit: batchProfit
-      });
-
       await updateDoc(doc(db, 'products', id), { ...updatedData, ...financials });
     } catch (e) { console.error('Update Metrics Failed:', e); }
   };
@@ -276,14 +233,17 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     if (!isAuthenticated) return;
     try {
       await addDoc(collection(db, 'expenses'), newExpense);
-      await addDoc(collection(db, 'history'), {
-        date: newExpense.date,
-        type: 'EXPENSE',
-        expenseCategory: newExpense.category,
-        expenseAmount: newExpense.amount,
-        netProfit: -newExpense.amount
-      });
     } catch (e) { console.error('Add Expense Failed:', e); }
+  };
+
+  const editExpense = async (id: string, expense: Partial<Expense>) => {
+    if (!isAuthenticated) return;
+    try { await updateDoc(doc(db, 'expenses', id), expense); } catch (e) { console.error('Edit Expense Failed:', e); }
+  };
+
+  const deleteExpense = async (id: string) => {
+    if (!isAuthenticated) return;
+    try { await deleteDoc(doc(db, 'expenses', id)); } catch (e) { console.error('Delete Expense Failed:', e); }
   };
 
   const addShipment = async (shipment: Shipment) => {
@@ -291,9 +251,29 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     try { await addDoc(collection(db, 'shipments'), shipment); } catch (e) { console.error('Add Shipment Failed:', e); }
   };
 
+  const editShipment = async (id: string, shipment: Partial<Shipment>) => {
+    if (!isAuthenticated) return;
+    try { await updateDoc(doc(db, 'shipments', id), shipment); } catch (e) { console.error('Edit Shipment Failed:', e); }
+  };
+
+  const deleteShipment = async (id: string) => {
+    if (!isAuthenticated) return;
+    try { await deleteDoc(doc(db, 'shipments', id)); } catch (e) { console.error('Delete Shipment Failed:', e); }
+  };
+
   const addInvoice = async (invoice: Invoice) => {
     if (!isAuthenticated) return;
     try { await addDoc(collection(db, 'invoices'), invoice); } catch (e) { console.error('Add Invoice Failed:', e); }
+  };
+
+  const editInvoice = async (id: string, invoice: Partial<Invoice>) => {
+    if (!isAuthenticated) return;
+    try { await updateDoc(doc(db, 'invoices', id), invoice); } catch (e) { console.error('Edit Invoice Failed:', e); }
+  };
+
+  const deleteInvoice = async (id: string) => {
+    if (!isAuthenticated) return;
+    try { await deleteDoc(doc(db, 'invoices', id)); } catch (e) { console.error('Delete Invoice Failed:', e); }
   };
 
   const toggleInvoiceStatus = async (id: string) => {
@@ -308,7 +288,10 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     <DataContext.Provider value={{ 
       products, expenses, monthlyStats, shipments, invoices, history,
       addProduct, deleteProduct, updateProductMetrics, editProductDetails,
-      addExpense, addShipment, addInvoice, toggleInvoiceStatus, clearAllData,
+      addExpense, editExpense, deleteExpense,
+      addShipment, editShipment, deleteShipment,
+      addInvoice, editInvoice, deleteInvoice,
+      toggleInvoiceStatus, clearAllData,
       login, logout, isAuthenticated, isLoading, user
     }}>
       {children}
